@@ -20,29 +20,6 @@
 #include <vector>
 
 namespace kernel_selector {
-static size_t GetScatterNDUpdateChannelIndex(const scatter_nd_update_params& params) {
-    Tensor::DataChannelName name = Tensor::DataChannelName::X;
-
-    const size_t input_size = params.inputs[0].GetDims().size();
-    switch (params.axis) {
-        case ScatterUpdateAxis::X:
-            return input_size - 1;
-        case ScatterUpdateAxis::Y:
-            return input_size - 2;
-        case ScatterUpdateAxis::Z:
-            return input_size - 3;
-        case ScatterUpdateAxis::W:
-            return 2;
-        case ScatterUpdateAxis::FEATURE:
-            return 1;
-        case ScatterUpdateAxis::BATCH:
-            return 0;
-        default:
-            break;
-    }
-
-    return DataTensor::Channelndex(params.output.GetLayout(), name);
-}
 
 ParamsKey ScatterNDUpdateKernelRef::GetSupportedKey() const {
     ParamsKey k;
@@ -88,28 +65,52 @@ static inline std::vector<std::string> GetDefaultOrder(size_t size) {
     return default_order;
 }
 
-CommonDispatchData ScatterNDUpdateKernelRef::SetDefault(const scatter_nd_update_params& params, const optional_params&, bool is_second) const {
-    CommonDispatchData dispatchData;
-    const auto& output = params.output;
-    const auto& indices = params.inputs[1];
+ScatterNDUpdateKernelRef::DispatchData ScatterNDUpdateKernelRef::SetDefault(const scatter_nd_update_params& params, const optional_params&, bool is_second) const {
+    DispatchData dispatchData;
 
-    const auto& scope = is_second ? indices : output;
+    if (!is_second) {
+        const auto& scope = params.output;
 
-    switch (params.inputs[0].GetLayout()) {
-    case DataLayout::bfyx:
-        dispatchData.gws = {scope.X().v, scope.Y().v, scope.Feature().v * scope.Batch().v};
-        break;
+        switch (params.inputs[0].GetLayout()) {
+        case DataLayout::bfyx:
+            dispatchData.gws = { scope.X().v, scope.Y().v, scope.Feature().v * scope.Batch().v };
+            break;
 
-    case DataLayout::bfzyx:
-        dispatchData.gws = {scope.X().v * scope.Y().v, scope.Z().v, scope.Feature().v * scope.Batch().v};
-        break;
+        case DataLayout::bfzyx:
+            dispatchData.gws = { scope.X().v * scope.Y().v, scope.Z().v, scope.Feature().v * scope.Batch().v };
+            break;
 
-    case DataLayout::bfwzyx:
-        dispatchData.gws = {scope.X().v * scope.Y().v, scope.Z().v * scope.W().v, scope.Feature().v * scope.Batch().v};
-        break;
-    default:
-        assert(0);
-        break;
+        case DataLayout::bfwzyx:
+            dispatchData.gws = { scope.X().v * scope.Y().v, scope.Z().v * scope.W().v, scope.Feature().v * scope.Batch().v };
+            break;
+        default:
+            assert(0);
+            break;
+        }
+    }
+    else {
+        const auto& indices = params.inputs[1];
+
+        auto indices_dims = indices.LogicalDims();
+        indices_dims.erase(std::remove_if(indices_dims.begin(), indices_dims.end(), [](const size_t& v) { return (v == 1); }), indices_dims.end());
+        if (indices_dims.size() > 1)
+        {
+            std::reverse(indices_dims.begin(), indices_dims.end());
+            dispatchData.indicesLastDim = indices_dims.back();
+            indices_dims.pop_back();
+        }
+        else
+        {
+            dispatchData.indicesLastDim = 1;
+        }
+
+        size_t indices_set_size = 1;
+        for (auto dim : indices_dims)
+        {
+            indices_set_size *= dim;
+        }
+
+        dispatchData.gws = { 1, 1, indices_set_size };
     }
 
     dispatchData.lws = GetOptimalLocalWorkGroupSizes(dispatchData.gws, params.engineInfo);
@@ -119,8 +120,6 @@ CommonDispatchData ScatterNDUpdateKernelRef::SetDefault(const scatter_nd_update_
 
 JitConstants ScatterNDUpdateKernelRef::GetJitConstants(const scatter_nd_update_params& params) const {
     JitConstants jit = MakeBaseParamsJitConstants(params);
-
-    jit.AddConstant(MakeJitConstant("AXIS_VALUE", GetScatterNDUpdateChannelIndex(params)));
 
     if (!params.fused_ops.empty()) {
         FusedOpsConfiguration conf1 = { "_FIRST_KERNEL", GetDefaultOrder(params.output.GetDims().size()), "val", params.inputs[0].GetDType() };
@@ -146,6 +145,39 @@ bool ScatterNDUpdateKernelRef::Validate(const Params& p, const optional_params& 
     return true;
 }
 
+static std::string GetInputBlockND(const scatter_nd_update_params& params)
+{
+    const auto& input = params.inputs[0];
+    auto input_dims = input.LogicalDims();
+    std::reverse(input_dims.begin(), input_dims.end());
+    while (!input_dims.empty() && input_dims.back() == 1)
+    {
+        input_dims.pop_back();
+    }
+    const int rank = (int)input_dims.size();
+    std::vector<size_t> block_nd(rank + 1);
+    block_nd[rank] = 1;
+    for (int idx = (rank - 1); idx >= 0; idx--)
+    {
+        block_nd[idx] = input_dims[idx] * block_nd[idx + 1];
+    }
+
+    std::stringstream s;
+    for (int i = 0; i < (rank + 1); i++)
+    {
+        if (i < rank)
+        {
+            s << block_nd[i] << ",";
+        }
+        else
+        {
+            s << block_nd[i];
+        }
+    }
+    auto str_result = s.str();
+    return str_result;
+}
+
 KernelsData ScatterNDUpdateKernelRef::GetKernelsData(const Params& params, const optional_params& options) const {
     if (!Validate(params, options)) {
         return {};
@@ -161,6 +193,8 @@ KernelsData ScatterNDUpdateKernelRef::GetKernelsData(const Params& params, const
 
         if (i == 1){
             cldnn_jit.AddConstant(MakeJitConstant("IS_SECOND_ITER", "true"));
+            cldnn_jit.AddConstant(MakeJitConstant("INDICES_LAST_DIM", dispatchData.indicesLastDim));
+            cldnn_jit.AddConstant(MakeJitConstant("INPUT_BLOCK_ND", GetInputBlockND(newParams)));
         }
         std::string jit = CreateJit(kernelName, cldnn_jit, entry_point);
 
