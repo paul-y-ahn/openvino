@@ -36,13 +36,17 @@ struct scatter_nd_update : public primitive_base<scatter_nd_update> {
     /// @param dict Input data primitive id.
     /// @param idx Input indexes primitive id.
     /// @param idupd Input updates primitive id.
+    /// @param indices_rank Rank of indices.
     scatter_nd_update(const primitive_id& id,
                    const primitive_id& data,
                    const primitive_id& idx,
                    const primitive_id& idupd,
+                   const size_t indices_rank,
                    const padding& output_padding = padding())
-        : primitive_base(id, {data, idx, idupd}, output_padding) {}
+        : primitive_base(id, {data, idx, idupd}, output_padding), indices_rank(indices_rank) {}
 
+    /// @brief ScatterNDUpdate indices_rank
+    size_t indices_rank;
 };
 /// @}
 /// @}

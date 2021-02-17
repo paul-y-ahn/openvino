@@ -5,25 +5,28 @@
 #include <vector>
 #include <ngraph/opsets/opset3.hpp>
 
-#include "single_layer_tests/scatter_elements_update.hpp"
-//#include "single_layer_tests/scatter_ND_update.hpp"
+#include "single_layer_tests/scatter_ND_update.hpp"
 #include "common_test_utils/test_constants.hpp"
 
 using namespace LayerTestsDefinitions;
 using namespace ngraph::opset3;
 
 namespace {
-// map<inputShape, map<indicesShape, axis>>
-std::map<std::vector<size_t>, std::map<std::vector<size_t>, std::vector<int>>> axesShapeInShape {
-    {{10, 12, 15}, {{{1, 2, 4}, {0, 1, 2}}, {{2, 2, 2}, {-1, -2, -3}}}},
-    {{15, 9, 8, 12}, {{{1, 2, 2, 2}, {0, 1, 2, 3}}, {{1, 2, 1, 4}, {-1, -2, -3, -4}}}},
-    {{9, 9, 8, 8, 11, 10}, {{{1, 2, 1, 2, 1, 2}, {5, -3}}}},
+
+// map<inputShape map<indicesShape, indicesValue>>
+// updateShape is gotten from inputShape and indicesShape
+std::map<std::vector<size_t>, std::map<std::vector<size_t>, std::vector<size_t>>> sliceSelectInShape {
+    {{10, 9, 9, 11}, {{{4, 1}, {1, 3, 5, 7}}, {{1, 2}, {4, 6}}, {{2, 3}, {0, 1, 1, 2, 2, 2}}, {{1, 4}, {5, 5, 4, 9}}}},
+    {{10, 9, 10, 9, 10}, {{{2, 3}, {0, 4, 6, 5, 7, 1}}}},
+    {{15},                        {{{2, 1}, {1, 3}}}},
+    {{15, 12},                    {{{2, 1}, {1, 3}}, {{2, 2}, {2, 3, 10, 11}}}},
+    {{15, 12, 15},                {{{2, 1}, {1, 3}}, {{2, 2}, {2, 3, 10, 11}}, {{2, 3}, {2, 3, 1, 8, 10, 11}}}},
+    {{15, 12, 15, 12},            {{{2, 1}, {1, 3}}, {{2, 2}, {2, 3, 10, 11}}, {{2, 3}, {2, 3, 1, 8, 10, 11}}, {{2, 4}, {2, 3, 1, 8, 7, 5, 6, 5}}}},
+    {{15, 12, 15, 12, 15},        {{{2, 1}, {1, 3}}, {{2, 2}, {2, 3, 10, 11}}, {{2, 3}, {2, 3, 1, 8, 10, 11}}, {{2, 4}, {2, 3, 1, 8, 7, 5, 6, 5}}, {{2, 5}, {2, 3, 1, 8, 6,  9, 7, 5, 6, 5}}}},
+    {{15, 12, 15, 12, 15, 10},    {{{2, 1}, {1, 3}}, {{2, 2}, {2, 3, 10, 11}}, {{2, 3}, {2, 3, 1, 8, 10, 11}}, {{2, 4}, {2, 3, 1, 8, 7, 5, 6, 5}}, {{2, 5}, {2, 3, 1, 8, 6,  9, 7, 5, 6, 5}}, {{2, 6}, {2, 3, 1, 8, 6, 5,  9, 7, 5, 6, 5, 7}}}}
 };
 
-// index value should not be random data
-const std::vector<std::vector<size_t>> idxValue = {
-        {1, 0, 4, 6, 2, 3, 7, 5}
-};
+
 
 const std::vector<InferenceEngine::Precision> inputPrecisions = {
         InferenceEngine::Precision::FP32,
@@ -36,14 +39,12 @@ const std::vector<InferenceEngine::Precision> idxPrecisions = {
         InferenceEngine::Precision::I64,
 };
 
-const auto ScatterEltUpdateCases = ::testing::Combine(
-        ::testing::ValuesIn(ScatterElementsUpdateLayerTest::combineShapes(axesShapeInShape)),
-        ::testing::ValuesIn(idxValue),
+const auto ScatterNDUpdateCases = ::testing::Combine(
+        ::testing::ValuesIn(ScatterNDUpdateLayerTest::combineShapes(sliceSelectInShape)),
         ::testing::ValuesIn(inputPrecisions),
         ::testing::ValuesIn(idxPrecisions),
         ::testing::Values(CommonTestUtils::DEVICE_GPU)
 );
 
-INSTANTIATE_TEST_CASE_P(kelvin_smoke_ScatterNDUpdate, ScatterElementsUpdateLayerTest,
-    ScatterEltUpdateCases, ScatterElementsUpdateLayerTest::getTestCaseName);
+INSTANTIATE_TEST_CASE_P(smoke_ScatterNDUpdate, ScatterNDUpdateLayerTest, ScatterNDUpdateCases, ScatterNDUpdateLayerTest::getTestCaseName);
 }  // namespace

@@ -23,7 +23,9 @@ namespace kernel_selector {
 // scatter_nd_update_params
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 struct scatter_nd_update_params : public base_params {
-    scatter_nd_update_params() : base_params(KernelType::SCATTER_ND_UPDATE) {}
+    scatter_nd_update_params() : base_params(KernelType::SCATTER_ND_UPDATE), indices_rank(0) {}
+
+    size_t indices_rank;
 
     virtual ParamsKey GetParamsKey() const { return base_params::GetParamsKey(); }
 };

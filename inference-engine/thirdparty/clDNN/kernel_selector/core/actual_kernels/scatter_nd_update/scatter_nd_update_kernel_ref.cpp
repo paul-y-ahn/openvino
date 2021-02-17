@@ -89,28 +89,22 @@ ScatterNDUpdateKernelRef::DispatchData ScatterNDUpdateKernelRef::SetDefault(cons
         }
     }
     else {
+        auto indices_rank = params.indices_rank;
         const auto& indices = params.inputs[1];
-
         auto indices_dims = indices.LogicalDims();
-        indices_dims.erase(std::remove_if(indices_dims.begin(), indices_dims.end(), [](const size_t& v) { return (v == 1); }), indices_dims.end());
+
         if (indices_dims.size() > 1)
         {
             std::reverse(indices_dims.begin(), indices_dims.end());
-            dispatchData.indicesLastDim = indices_dims.back();
-            indices_dims.pop_back();
-        }
-        else
-        {
-            dispatchData.indicesLastDim = 1;
         }
 
+        dispatchData.indicesLastDim = indices_dims[indices_rank - 1];
         size_t indices_set_size = 1;
-        for (auto dim : indices_dims)
+        for (int i = 0; i < (indices_rank - 1); i++)
         {
-            indices_set_size *= dim;
+            indices_set_size *= indices_dims[i];
         }
-
-        dispatchData.gws = { 1, 1, indices_set_size };
+        dispatchData.gws = {1, 1, indices_set_size};
     }
 
     dispatchData.lws = GetOptimalLocalWorkGroupSizes(dispatchData.gws, params.engineInfo);
@@ -187,6 +181,8 @@ KernelsData ScatterNDUpdateKernelRef::GetKernelsData(const Params& params, const
     scatter_nd_update_params& newParams = *static_cast<scatter_nd_update_params*>(kd.params.get());
     auto cldnn_jit = GetJitConstants(newParams);
 
+    // First iter - copy input data to output data
+    // Second iter - update values specified by updates at specific index position specified by indices
     for (int i = 0; i < 2; i++) {
         auto dispatchData = SetDefault(newParams, options, (i == 1));
         auto entry_point = GetEntryPoint(kernelName, newParams.layerID, options);

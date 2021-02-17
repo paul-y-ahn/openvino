@@ -37,6 +37,8 @@ public:
         auto scatter_nd_update_optional_params =
             get_default_optional_params<kernel_selector::scatter_nd_update_optional_params>(arg.get_program());
 
+        scatter_nd_update_params.indices_rank = arg.get_primitive()->indices_rank;
+
         scatter_nd_update_params.inputs.push_back(convert_data_tensor(arg.input(1).get_output_layout()));
         scatter_nd_update_params.inputs.push_back(convert_data_tensor(arg.input(2).get_output_layout()));
 
