@@ -26,25 +26,6 @@ using namespace cldnn;
 
 namespace cldnn {
 namespace gpu {
-kernel_selector::scatter_update_axis convert_axis(scatter_nd_update::scatter_nd_update_axis axis, const scatter_nd_update_node& arg) {
-    switch (axis) {
-        case scatter_nd_update::along_x:
-            return kernel_selector::scatter_update_axis::X;
-        case scatter_nd_update::along_y:
-            return kernel_selector::scatter_update_axis::Y;
-        case scatter_nd_update::along_z:
-            return kernel_selector::scatter_update_axis::Z;
-        case scatter_nd_update::along_w:
-            return kernel_selector::scatter_update_axis::W;
-        case scatter_nd_update::along_f:
-            return kernel_selector::scatter_update_axis::FEATURE;
-        case scatter_nd_update::along_b:
-            return kernel_selector::scatter_update_axis::BATCH;
-        default:
-            CLDNN_ERROR_MESSAGE(arg.id(), "Unsupported Axis");
-    }
-    return kernel_selector::scatter_update_axis::X;
-}
 
 struct scatter_nd_update_gpu : typed_primitive_gpu_impl<scatter_nd_update> {
     using parent = typed_primitive_gpu_impl<scatter_nd_update>;
@@ -55,8 +36,6 @@ public:
         auto scatter_nd_update_params = get_default_params<kernel_selector::scatter_nd_update_params>(arg);
         auto scatter_nd_update_optional_params =
             get_default_optional_params<kernel_selector::scatter_nd_update_optional_params>(arg.get_program());
-
-        scatter_nd_update_params.axis = convert_axis(arg.get_primitive()->axis, arg);
 
         scatter_nd_update_params.inputs.push_back(convert_data_tensor(arg.input(1).get_output_layout()));
         scatter_nd_update_params.inputs.push_back(convert_data_tensor(arg.input(2).get_output_layout()));

@@ -31,31 +31,18 @@ namespace cldnn {
 struct scatter_nd_update : public primitive_base<scatter_nd_update> {
     CLDNN_DECLARE_PRIMITIVE(scatter_nd_update)
 
-    enum scatter_nd_update_axis {
-        along_b,
-        along_f,
-        along_x,
-        along_y,
-        along_z,
-        along_w
-    };
-
     /// @brief Constructs scatter_nd_update primitive.
     /// @param id This primitive id.
     /// @param dict Input data primitive id.
     /// @param idx Input indexes primitive id.
     /// @param idupd Input updates primitive id.
-    /// @param axis Gathering axis.
     scatter_nd_update(const primitive_id& id,
                    const primitive_id& data,
                    const primitive_id& idx,
                    const primitive_id& idupd,
-                   const scatter_nd_update_axis axis,
                    const padding& output_padding = padding())
-        : primitive_base(id, {data, idx, idupd}, output_padding), axis(axis) {}
+        : primitive_base(id, {data, idx, idupd}, output_padding) {}
 
-    /// @brief ScatterNDUpdate axis
-    scatter_nd_update_axis axis;
 };
 /// @}
 /// @}
