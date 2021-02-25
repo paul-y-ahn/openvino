@@ -98,7 +98,8 @@ ScatterNDUpdateKernelRef::DispatchData ScatterNDUpdateKernelRef::SetDefault(cons
 
         dispatchData.indicesLastDim = indices_dims[indices_rank - 1];
         size_t indices_set_size = 1;
-        for (int i = 0; i < (indices_rank - 1); i++) {
+        for (size_t i = 0; i < (indices_rank - 1); i++) {
+
             indices_set_size *= indices_dims[i];
         }
         dispatchData.gws = {1, 1, indices_set_size};
