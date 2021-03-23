@@ -34,10 +34,646 @@
 #include <cmath>
 #include <gmock/gmock.h>
 #include <limits>
+#include <iostream>
 
 using namespace cldnn;
 using namespace tests;
 using namespace testing;
+
+
+TEST(fused_conv_eltwise, yolov5_fused_eltw_pattern01_b_fs_yx_fsv16_f32)
+{
+    //Test pattern of Conv_208/WithoutBiases in yolov5s-gpu-rg.xml
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f32, format::b_fs_yx_fsv16, { 1, 128, 40, 40 } /*memory order*/ }); //memory order
+    auto weights = memory::allocate(engine, { data_types::f32, format::os_is_yx_osv16_isv16, { 128, 128, 1, 1 } });
+    auto sum_input = memory::allocate(engine, { data_types::f32, format::b_fs_yx_fsv16, { 1, 1, 1, 1 } });
+
+    const int32_t total_size = 128 * 40 * 40;
+    std::vector<float> inputVec(total_size);
+    for (int i = 0; i < total_size; i++)
+    {
+        inputVec[i] = float(i+1);
+    }
+
+    set_values(input, inputVec);
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("sum_input", sum_input),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise1", "conv", "sum_input", eltwise_mode::sum),
+        eltwise("eltwise2", "eltwise1", "conv", eltwise_mode::prod),
+        reorder("out_reorder", "eltwise2", format::b_fs_yx_fsv16, data_types::f32));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_trial_new_pattern01_b_fs_yx_fsv16_fp32" << std::endl;
+    std::cout << "input : f32, b_fs_yx_fsv16, {1, 128, 40, 40}" << std::endl;
+    std::cout << "weights : f32, os_is_yx_osv16_isv16 {128, 128, 1, 1}" << std::endl;
+    std::cout << "sum_input : f32, b_fs_yx_fsv16 {1, 1, 1, 1}" << std::endl;
+
+    std::cout << "topology topology(" << std::endl;
+    std::cout << "    input_layout(\"input\", input.get_layout())," << std::endl;
+    std::cout << "    data(\"sum_input\", sum_input)," << std::endl;
+    std::cout << "    data(\"weights\", weights)," << std::endl;
+    std::cout << "    convolution(\"conv\", \"input\", { \"weights\" })," << std::endl;
+    std::cout << "    eltwise(\"eltwise1\", \"conv\", \"sum_input\", eltwise_mode::sum)," << std::endl;
+    std::cout << "    eltwise(\"eltwise2\", \"eltwise1\", \"conv\", eltwise_mode::prod)," << std::endl;
+    std::cout << "    reorder(\"out_reorder\", \"eltwise\", format::bfyx, data_types::f32));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::b_fs_yx_fsv16);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 128);
+    EXPECT_EQ(out_layout.size.spatial[0], 40);
+    EXPECT_EQ(out_layout.size.spatial[1], 40);
+}
+
+TEST(fused_conv_eltwise, yolov5_fused_eltw_pattern01_trial_single_etlw_b_fs_yx_fsv16_f32)
+{
+    //Test pattern of Conv_208/WithoutBiases in yolov5s-gpu-rg.xml
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f32, format::b_fs_yx_fsv16, { 1, 128, 40, 40 } /*memory order*/ }); //memory order
+    auto weights = memory::allocate(engine, { data_types::f32, format::os_is_yx_osv16_isv16, { 128, 128, 1, 1 } });
+    auto sum_input = memory::allocate(engine, { data_types::f32, format::b_fs_yx_fsv16, { 1, 1, 1, 1 } });
+
+    const int32_t total_size = 128 * 40 * 40;
+    std::vector<float> inputVec(total_size);
+    for (int i = 0; i < total_size; i++)
+    {
+        inputVec[i] = float(i+1);
+    }
+
+    set_values(input, inputVec);
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("sum_input", sum_input),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise1", "conv", "sum_input", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise1", format::bfyx, data_types::f32));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_trial_new_pattern01_fix_b_fs_yx_fsv16_fp32" << std::endl;
+    std::cout << "input : f32, b_fs_yx_fsv16, {1, 128, 40, 40}" << std::endl;
+    std::cout << "weights : f32, os_is_yx_osv16_isv16 {128, 128, 1, 1}" << std::endl;
+    std::cout << "sum_input : f32, b_fs_yx_fsv16 {1, 1, 1, 1}" << std::endl;
+
+    std::cout << "topology topology(" << std::endl;
+    std::cout << "    input_layout(\"input\", input.get_layout())," << std::endl;
+    std::cout << "    data(\"sum_input\", sum_input)," << std::endl;
+    std::cout << "    data(\"weights\", weights)," << std::endl;
+    std::cout << "    convolution(\"conv\", \"input\", { \"weights\" })," << std::endl;
+    std::cout << "    eltwise(\"eltwise1\", \"conv\", \"sum_input\", eltwise_mode::sum)," << std::endl;
+    std::cout << "    reorder(\"out_reorder\", \"eltwise1\", format::bfyx, data_types::f32));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::bfyx);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 128);
+    EXPECT_EQ(out_layout.size.spatial[0], 40);
+    EXPECT_EQ(out_layout.size.spatial[1], 40);
+}
+
+
+TEST(fused_conv_eltwise, paul_origin_yxfb_f16)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f16, format::yxfb, { 1, 1, 5, 4 } });
+    auto weights = memory::allocate(engine, { data_types::f16, format::yxfb, { 1, 1, 1, 1 } });
+
+    set_values(input, {
+        FLOAT16(1.0f),  FLOAT16(2.0f), FLOAT16(-15.f),  FLOAT16(3.0f), FLOAT16(4.0f), FLOAT16(-15.f), FLOAT16(5.0f),  FLOAT16(6.0f), FLOAT16(-15.f), FLOAT16(7.0f),
+        FLOAT16(-15.f), FLOAT16(0.0f),  FLOAT16(0.0f), FLOAT16(-15.f), FLOAT16(0.5f), FLOAT16(-0.5f), FLOAT16(-15.f), FLOAT16(8.0f),  FLOAT16(1.5f),  FLOAT16(5.2f)
+    });
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::yxfb, data_types::f16));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_origin_yxfb_f16" << std::endl;
+    std::cout << "input : f16, yxfb, {4,5,1,1}" << std::endl;
+    std::cout << "weights : f16, yxfb {1,1,1,1}" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::yxfb, data_types::f16));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::yxfb);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 1);
+    EXPECT_EQ(out_layout.size.spatial[0], 5);
+    EXPECT_EQ(out_layout.size.spatial[1], 4);
+}
+
+TEST(fused_conv_eltwise, paul_origin_f32_b_fs_zyx_fsv16_os_is_zyx_osv16_isv16)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f32, format::b_fs_zyx_fsv16, { 1, 128, 40, 40, 1 } /*memory order*/ }); //memory order
+    auto weights = memory::allocate(engine, { data_types::f32, format::os_is_zyx_isv16_osv16, { 128, 128, 1, 1, 1 } });
+
+    const int32_t total_size = 128 * 40 * 40;
+    std::vector<float> inputVec(total_size);
+    for (int i = 0; i < total_size; i++)
+    {
+        inputVec[i] = float(i+1);
+    }
+    set_values(input, inputVec);
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::b_fs_zyx_fsv16, data_types::f32));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_origin_f32_b_fs_zyx_fsv16_os_is_zyx_osv16_isv16" << std::endl;
+    std::cout << "input : f32, b_fs_zyx_fsv16, { 1, 128, 1, 40, 40 }" << std::endl;
+    std::cout << "weights : f32, os_is_zyx_isv16_osv16, { 128, 128, 1, 1, 1 }" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::b_fs_zyx_fsv16, data_types::f32));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::b_fs_zyx_fsv16);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 128);
+    EXPECT_EQ(out_layout.size.spatial[0], 40);
+    EXPECT_EQ(out_layout.size.spatial[1], 40);
+    EXPECT_EQ(out_layout.size.spatial[2], 1);
+}
+
+TEST(fused_conv_eltwise, paul_origin_f16_b_fs_zyx_fsv16_os_is_zyx_osv16_isv16)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f16, format::b_fs_zyx_fsv16, { 1, 128, 40, 40, 1 } /*memory order*/ }); //memory order
+    auto weights = memory::allocate(engine, { data_types::f16, format::os_is_zyx_isv16_osv16, { 128, 128, 1, 1, 1 } });
+
+    const int32_t total_size = 128 * 40 * 40;
+    std::vector<FLOAT16> inputVec(total_size);
+    for (int i = 0; i < total_size; i++)
+    {
+        inputVec[i] = FLOAT16(i+1);
+    }
+    set_values(input, inputVec);
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::b_fs_zyx_fsv16, data_types::f16));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_origin_f16_b_fs_zyx_fsv16_os_is_zyx_osv16_isv16" << std::endl;
+    std::cout << "input : f16, b_fs_zyx_fsv16, { 1, 128, 1, 40, 40 }" << std::endl;
+    std::cout << "weights : f16, os_is_zyx_isv16_osv16, { 128, 128, 1, 1, 1 }" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::b_fs_zyx_fsv16, data_types::f16));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::b_fs_zyx_fsv16);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 128);
+    EXPECT_EQ(out_layout.size.spatial[0], 40);
+    EXPECT_EQ(out_layout.size.spatial[1], 40);
+    EXPECT_EQ(out_layout.size.spatial[2], 1);
+}
+
+TEST(fused_conv_eltwise, paul_origin_f16_b_fs_yx_fsv16_os_is_yx_osv16_isv16)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f16, format::b_fs_yx_fsv16, { 1, 128, 40, 40 } /*memory order*/ }); //memory order
+    auto weights = memory::allocate(engine, { data_types::f16, format::os_is_yx_osv16_isv16, { 128, 128, 1, 1 } });
+
+    const int32_t total_size = 128 * 40 * 40;
+    std::vector<FLOAT16> inputVec(total_size);
+    for (int i = 0; i < total_size; i++)
+    {
+        inputVec[i] = FLOAT16(i+1);
+    }
+    set_values(input, inputVec);
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::b_fs_yx_fsv16, data_types::f16));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : origin_f16_b_fs_yx_fsv16_os_is_yx_osv16_isv16" << std::endl;
+    std::cout << "input : f16, b_fs_yx_fsv16, { 1, 128, 40, 40 }" << std::endl;
+    std::cout << "weights : f16, os_is_yx_osv16_isv16, { 128, 128, 1, 1 }" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::b_fs_yx_fsv16, data_types::f16));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::b_fs_yx_fsv16);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 128);
+    EXPECT_EQ(out_layout.size.spatial[0], 40);
+    EXPECT_EQ(out_layout.size.spatial[1], 40);
+}
+
+TEST(fused_conv_eltwise, paul_origin_f32_b_fs_yx_fsv16_os_is_yx_osv16_isv16)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f32, format::b_fs_yx_fsv16, { 1, 128, 40, 40 } /*memory order*/ }); //memory order
+    auto weights = memory::allocate(engine, { data_types::f32, format::os_is_yx_osv16_isv16, { 128, 128, 1, 1 } });
+
+    const int32_t total_size = 128 * 40 * 40;
+    std::vector<float> inputVec(total_size);
+    for (int i = 0; i < total_size; i++)
+    {
+        inputVec[i] = float(i+1);
+    }
+    set_values(input, inputVec);
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::b_fs_yx_fsv16, data_types::f32));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : origin_f32_b_fs_yx_fsv16_os_is_yx_osv16_isv16" << std::endl;
+    std::cout << "input : f32, b_fs_yx_fsv16, { 1, 128, 40, 40 }" << std::endl;
+    std::cout << "weights : f32, os_is_yx_osv16_isv16, { 128, 128, 1, 1 }" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::b_fs_yx_fsv16, data_types::f32));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::b_fs_yx_fsv16);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 128);
+    EXPECT_EQ(out_layout.size.spatial[0], 40);
+    EXPECT_EQ(out_layout.size.spatial[1], 40);
+}
+
+TEST(fused_conv_eltwise, paul_origin_bfyx_u8)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::u8, format::bfyx, { 1, 1, 4, 5 } });
+    auto weights = memory::allocate(engine, { data_types::u8, format::bfyx, { 1, 1, 1, 1 } });
+
+    std::vector<int8_t> inputVec = {
+        1,  2, 15, 3,  4, 15, 5,  6, 15, 7,
+        15, 0, 0,  15, 1, 1,  15, 8, 2,  5
+    };
+    set_values(input, inputVec);
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::bfyx, data_types::u8));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_origin_bfyx_u8" << std::endl;
+    std::cout << "input : u8, bfyx, {1,1,5,4}" << std::endl;
+    std::cout << "weights : u8, bfyx {1,1,1,1}" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::bfyx, data_types::u8));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::bfyx);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 1);
+    EXPECT_EQ(out_layout.size.spatial[0], 4);
+    EXPECT_EQ(out_layout.size.spatial[1], 5);
+}
+
+TEST(fused_conv_eltwise, paul_origin_bfyx_i8)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::i8, format::bfyx, { 1, 1, 4, 5 } });
+    auto weights = memory::allocate(engine, { data_types::i8, format::bfyx, { 1, 1, 1, 1 } });
+
+    std::vector<int8_t> inputVec = {
+        1,  2, 15, 3,  4, 15, 5,  6, 15, 7,
+        15, 0, 0,  15, 1, 1,  15, 8, 2,  5
+    };
+    set_values(input, inputVec);
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::bfyx, data_types::i8));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_origin_bfyx_i8" << std::endl;
+    std::cout << "input : i8, bfyx, {1,1,5,4}" << std::endl;
+    std::cout << "weights : i8, bfyx {1,1,1,1}" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::bfyx, data_types::i8));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::bfyx);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 1);
+    EXPECT_EQ(out_layout.size.spatial[0], 4);
+    EXPECT_EQ(out_layout.size.spatial[1], 5);
+}
+
+TEST(fused_conv_eltwise, paul_origin_bfyx_f16)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f16, format::bfyx, { 1, 1, 4, 5 } });
+    auto weights = memory::allocate(engine, { data_types::f16, format::bfyx, { 1, 1, 1, 1 } });
+
+    set_values(input, {
+        FLOAT16(1.0f),  FLOAT16(2.0f), FLOAT16(-15.f),  FLOAT16(3.0f), FLOAT16(4.0f), FLOAT16(-15.f), FLOAT16(5.0f),  FLOAT16(6.0f), FLOAT16(-15.f), FLOAT16(7.0f),
+        FLOAT16(-15.f), FLOAT16(0.0f),  FLOAT16(0.0f), FLOAT16(-15.f), FLOAT16(0.5f), FLOAT16(-0.5f), FLOAT16(-15.f), FLOAT16(8.0f),  FLOAT16(1.5f),  FLOAT16(5.2f)
+    });
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::bfyx, data_types::f16));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_origin_bfyx_f16" << std::endl;
+    std::cout << "input : f16, bfyx, {1,1,5,4}" << std::endl;
+    std::cout << "weights : f16, bfyx {1,1,1,1}" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::bfyx, data_types::f16));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::bfyx);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 1);
+    EXPECT_EQ(out_layout.size.spatial[0], 4);
+    EXPECT_EQ(out_layout.size.spatial[1], 5);
+}
+
+TEST(fused_conv_eltwise, paul_origin_bfyx_f32)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f32, format::bfyx, { 1, 1, 4, 5 } });
+    auto weights = memory::allocate(engine, { data_types::f32, format::bfyx, { 1, 1, 1, 1 } });
+
+    set_values(input, {
+        1.0f,  2.0f, -15.f,  3.0f, 4.0f, -15.f, 5.0f,  6.0f, -15.f, 7.0f,
+        -15.f, 0.0f,  0.0f, -15.f, 0.5f, -0.5f, -15.f, 8.0f,  1.5f,  5.2f
+    });
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise", "input", "conv", eltwise_mode::sum),
+        reorder("out_reorder", "eltwise", format::bfyx, data_types::f32));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_origin_bfyx_f32" << std::endl;
+    std::cout << "input : f32, bfyx, {1,1,5,4}" << std::endl;
+    std::cout << "weights : f32, bfyx {1,1,1,1}" << std::endl;
+
+    std::cout << "topology topology(\n\tinput_layout(\"input\", input.get_layout()),\n";
+    std::cout << "\tdata(\"weights\", weights),\n";
+    std::cout << "\tconvolution(\"conv\", \"input\", { \"weights\" }),\n";
+    std::cout << "\teltwise(\"eltwise\", \"input\", \"conv\", eltwise_mode::sum),\n";
+    std::cout << "\treorder(\"out_reorder\", \"eltwise\", format::bfyx, data_types::f32));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::bfyx);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 1);
+    EXPECT_EQ(out_layout.size.spatial[0], 4);
+    EXPECT_EQ(out_layout.size.spatial[1], 5);
+}
+
+TEST(fused_conv_eltwise, paul_trial_new_pattern01)
+{
+    const auto& engine = get_test_engine();
+
+    auto input = memory::allocate(engine, { data_types::f32, format::bfyx, { 1/*b*/, 1/*f*/, 4/*x*/, 5/*y*/ } /*memory order*/ }); //memory order
+    auto weights = memory::allocate(engine, { data_types::f32, format::bfyx, { 1, 1, 1, 1 } });
+    auto sum_input = memory::allocate(engine, { data_types::f32, format::bfyx, { 1, 1, 1, 1 } });
+
+    set_values(input, {
+        1.0f,  2.0f, -15.f,  3.0f, 4.0f, -15.f, 5.0f,  6.0f, -15.f, 7.0f,
+        -15.f, 0.0f,  0.0f, -15.f, 0.5f, -0.5f, -15.f, 8.0f,  1.5f,  5.2f
+    });
+
+    topology topology(
+        input_layout("input", input.get_layout()),
+        data("sum_input", sum_input),
+        data("weights", weights),
+        convolution("conv", "input", { "weights" }),
+        eltwise("eltwise1", "conv", "sum_input", eltwise_mode::sum),
+        eltwise("eltwise2", "eltwise1", "conv", eltwise_mode::prod),
+        reorder("out_reorder", "eltwise2", format::bfyx, data_types::f32));
+
+    std::cout << "*************************************************************" << std::endl;
+    std::cout << "Test : fused_conv_eltwise_trial_new_pattern01" << std::endl;
+    std::cout << "input : f32, bfyx, {1,1,4,5}" << std::endl;
+    std::cout << "weights : f32, bfyx {1,1,1,1}" << std::endl;
+    std::cout << "sum_input : f32, bfyx {1,1,1,1}" << std::endl;
+
+    std::cout << "topology topology(" << std::endl;
+    std::cout << "    input_layout(\"input\", input.get_layout())," << std::endl;
+    std::cout << "    data(\"sum_input\", sum_input)," << std::endl;
+    std::cout << "    data(\"weights\", weights)," << std::endl;
+    std::cout << "    convolution(\"conv\", \"input\", { \"weights\" })," << std::endl;
+    std::cout << "    eltwise(\"eltwise1\", \"conv\", \"sum_input\", eltwise_mode::sum)," << std::endl;
+    std::cout << "    eltwise(\"eltwise2\", \"eltwise1\", \"conv\", eltwise_mode::prod)," << std::endl;
+    std::cout << "    reorder(\"out_reorder\", \"eltwise\", format::bfyx, data_types::f32));" << std::endl << std::endl;
+
+    build_options opt;
+    opt.set_option(build_option::optimize_data(true));
+    network network(engine, topology, opt);
+    network.set_input_data("input", input);
+
+    auto outputs = network.execute();
+    EXPECT_EQ(outputs.size(), size_t(1));
+    EXPECT_EQ(outputs.begin()->first, "out_reorder");
+
+    auto output = outputs.begin()->second.get_memory();
+    auto&& out_layout = output.get_layout();
+
+    EXPECT_EQ(out_layout.format, format::bfyx);
+    EXPECT_EQ(out_layout.size.batch[0], 1);
+    EXPECT_EQ(out_layout.size.feature[0], 1);
+    EXPECT_EQ(out_layout.size.spatial[0], 4);
+    EXPECT_EQ(out_layout.size.spatial[1], 5);
+}
 
 TEST(fused_conv_eltwise, basic_0)
 {
