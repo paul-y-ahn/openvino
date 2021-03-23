@@ -1488,7 +1488,7 @@ JitConstants FusedOpsCodeGenerator::MakeLoadJitConstants(const FusedOpsConfigura
 
 JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfiguration& conf,
                                                        const std::string in_var, const Datatype in_type,
-                                                       std::string& out_var, Datatype& out_type) const {
+                                                       std::string& out_var, Datatype& out_type, bool is_second) const {
     JitConstants jit = {};
 
     std::string op_decls = "";
@@ -1496,8 +1496,12 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
     auto idx = conf.bfzyx_idx_order;
     std::string shuffle_var = conf.shuffle_var_name;
     bool is_shuffled = false;
-
-    out_var = GetOutputVarName(in_var);
+    if (is_second) {
+        out_var = "dst_out_2";
+    } else {
+        out_var = GetOutputVarName(in_var);
+    }
+    // out_var = GetOutputVarName(in_var);
     out_type = desc.output_tensor.GetDType();
 
     if (conf.load_type == FusedOpsConfiguration::LoadType::FEATURE_SHUFFLE &&
@@ -1573,7 +1577,16 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
             }
 
             auto tmp_var = out_var + "_tmp";
-            op_decls += "\\\n\t" + GetType(get_acc_t(), vec_size) + " " + tmp_var + " = " + get_input(0) + op + get_input(1) + ";";
+            if (is_second) {
+                if (conf.suffix.find("_SCALAR") != std::string::npos) {
+                    op_decls += "\\\n\t" + GetType(get_acc_t(), vec_size) + " " + tmp_var + " = " + "dst[i]" + op + "dst_i__out" + ";";
+                } else {
+                    op_decls += "\\\n\t" + GetType(get_acc_t(), vec_size) + " " + tmp_var + " = " + "dst" + op + "dst_out" + ";";
+                }
+            } else {
+                op_decls += "\\\n\t" + GetType(get_acc_t(), vec_size) + " " + tmp_var + " = " + get_input(0) + op + get_input(1) + ";";
+            }
+            // op_decls += "\\\n\t" + GetType(get_acc_t(), vec_size) + " " + tmp_var + " = " + get_input(0) + op + get_input(1) + ";";
             op_decls += "\\\n\t" + GetOutputType(vec_size) + " " + out_var + " = " + ConvertToOutputType(tmp_var, vec_size) + ";";
             break;
         }

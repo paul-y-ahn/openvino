@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <iostream>
 
 namespace kernel_selector {
 bool ConvolutionKernelBase::Validate(const Params& p, const optional_params& o) const {
