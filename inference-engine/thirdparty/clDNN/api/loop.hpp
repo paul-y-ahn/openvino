@@ -73,7 +73,6 @@ namespace cldnn {
 /// cldnn::loop loop(
 /// 	"loop",
 /// 	{input_id, const_id},
-///     {output_id},
 /// 	topology_internal,
 /// 	max_iteration_id,
 /// 	initial_condition_id,
@@ -83,9 +82,7 @@ namespace cldnn {
 /// );
 ///
 /// topology.add(loop);
-/// // output will be accessible by the primitive id <loop primitive id>:<output primitive id> e.g. "loop:output"
-/// // if output is not concatenated, the output's primitive id will be
-/// // <loop primitive id>:<output primitive id>_<iteration number> e.g. "loop:output_0", "loop:output_1", "loop:output_2", ...
+/// // output will be accessble by output_id
 /// \endcode
 struct loop : public primitive_base<loop> {
     CLDNN_DECLARE_PRIMITIVE(loop)
@@ -142,7 +139,6 @@ struct loop : public primitive_base<loop> {
     ///
     /// @param id This primitive id.
     /// @param inputs Input data primitive ids.
-    /// @param outputs Output data primitive ids.
     /// @param body Topology to be recurrently executed.
     /// @param trip_count_id Data primitive id in external topology specifying maximum number of iterations.
     ///                      Its data primitive should have 1 integer element. Negative value means infinite
@@ -163,25 +159,20 @@ struct loop : public primitive_base<loop> {
     /// @param output_padding     Optional padding for output from primitive.
     loop(const primitive_id& id,
         const std::vector<primitive_id>& inputs,
-        const std::vector<primitive_id>& outputs,
         const topology& body,
         const primitive_id& trip_count_id,
         const primitive_id& initial_execution_id,
-        const primitive_id& current_iteration_id = "",
-        const primitive_id& execution_condition_id = "",
+        const primitive_id& current_iteration_id = primitive_id(),
+        const primitive_id& execution_condition_id = primitive_id(),
         const std::vector<primitive_mapping>& primitive_map = {},
         const std::vector<backedge_mapping>& back_edges = {},
         const padding& output_padding = padding())
             : primitive_base(id, inputs, output_padding),
-              outputs(outputs),
               body(body),
               current_iteration_id(current_iteration_id),
               execution_condition_id(execution_condition_id),
               primitive_map(primitive_map),
               back_edges(back_edges) {}
-
-    /// @brief Array of output primitive id.
-    std::vector<primitive_id> outputs;
 
     /// @brief Topology to be recurrently executed.
     topology body;
@@ -207,10 +198,16 @@ struct loop : public primitive_base<loop> {
 protected:
     std::vector<std::reference_wrapper<const primitive_id>> get_dependencies() const override {
         std::vector<std::reference_wrapper<const primitive_id>> ret;
-        ret.reserve(input.size());
+        ret.reserve(primitive_map.size()+4);
         for (const auto& input: input) {
             ret.push_back(std::ref(input));
         }
+        ret.push_back(std::ref(trip_count_id));
+        ret.push_back(std::ref(initial_execution_id));
+        if (!current_iteration_id.empty())
+            ret.push_back(std::ref(current_iteration_id));
+        if (!execution_condition_id.empty())
+            ret.push_back(std::ref(execution_condition_id));
         return ret;
     }
 };

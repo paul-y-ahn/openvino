@@ -67,7 +67,7 @@
 #include "api/non_max_suppression.hpp"
 #include "api/grn.hpp"
 #include "api/ctc_greedy_decoder.hpp"
-#include "api/tensor_iterator.hpp"
+#include "api/loop.hpp"
 
 
 namespace cldnn { namespace gpu {
@@ -150,7 +150,7 @@ REGISTER_GPU(ctc_greedy_decoder);
 REGISTER_GPU(cum_sum);
 REGISTER_GPU(embedding_bag);
 REGISTER_GPU(extract_image_patches);
-REGISTER_GPU(tensor_iterator);
+REGISTER_GPU(loop);
 
 #undef REGISTER_GPU
 
