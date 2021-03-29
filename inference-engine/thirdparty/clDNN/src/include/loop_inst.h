@@ -15,7 +15,7 @@
 */
 #pragma once
 
-#include "api/tensor_iterator.hpp"
+#include "api/loop.hpp"
 #include "api/mutable_data.hpp"
 #include "api/input_layout.hpp"
 #include "api/memory.hpp"
@@ -28,9 +28,9 @@
 
 namespace cldnn {
 template<>
-struct typed_program_node<tensor_iterator> : public typed_program_node_base<tensor_iterator> {
+struct typed_program_node<loop> : public typed_program_node_base<loop> {
 private:
-    using parent = typed_program_node_base<tensor_iterator>;
+    using parent = typed_program_node_base<loop>;
     topology_impl& body;
 
     mutable program_impl::ptr body_program;
@@ -67,10 +67,10 @@ public:
     }
     const std::string backedge_suffix = ":backedge";
 
-    static const tensor_iterator::input_mapping* find_input_port_description(int prim_num, const tensor_iterator::port_map_collection& ports_desc) {
+    static const loop::input_mapping* find_input_port_description(int prim_num, const loop::port_map_collection& ports_desc) {
         auto input_desc = std::find_if(ports_desc.input_ports.begin(),
                                        ports_desc.input_ports.end(),
-                                       [&](const tensor_iterator::input_mapping& im) { return im.from == prim_num; });
+                                       [&](const loop::input_mapping& im) { return im.from == prim_num; });
         if (input_desc == std::end(ports_desc.input_ports))
             return nullptr;
         return &(*input_desc);
@@ -91,7 +91,7 @@ public:
         // setup internal inputs
         const int deps_size = deps.size();
         for (int i = 0; i < deps_size; i++) {
-            const tensor_iterator::input_mapping* input_rule = find_input_port_description(i, ports_desc);
+            const loop::input_mapping* input_rule = find_input_port_description(i, ports_desc);
             assert(desc != nullptr);
             layout calculated_layout = calculate_layout_for_input(i);
             if (body.get_primitives().count(input_rule->to) == 0)
@@ -144,27 +144,26 @@ public:
         }
         return ids;
     }
-    const tensor_iterator::port_map_collection &ports_desc;
+    // const loop::port_map_collection &ports_desc;
 };
 
-using tensor_iterator_node = typed_program_node<tensor_iterator>;
+using loop_node = typed_program_node<loop>;
 
 template <>
-class typed_primitive_inst<tensor_iterator> : public typed_primitive_inst_base<tensor_iterator> {
-    using parent = typed_primitive_inst_base<tensor_iterator>;
+class typed_primitive_inst<loop> : public typed_primitive_inst_base<loop> {
+    using parent = typed_primitive_inst_base<loop>;
 
 public:
-    static layout calc_output_layout(tensor_iterator_node const& node);
-    static std::string to_string(tensor_iterator_node const& node);
+    static layout calc_output_layout(loop_node const& node);
+    static std::string to_string(loop_node const& node);
 
 public:
-    typed_primitive_inst(network_impl& network, tensor_iterator_node const& node);
+    typed_primitive_inst(network_impl& network, loop_node const& node);
     network_impl::ptr get_body_network() const { return body_network; }
     std::vector<primitive_id> body_inputs() const { return node.body_inputs(); }
-    const tensor_iterator::port_map_collection get_port_desc() const { return node.ports_desc; }
 private:
     network_impl::ptr body_network;
 };
 
-using tensor_iterator_inst = typed_primitive_inst<tensor_iterator>;
+using loop_inst = typed_primitive_inst<loop>;
 }  // namespace cldnn

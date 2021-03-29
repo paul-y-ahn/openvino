@@ -14,7 +14,7 @@
 // limitations under the License.
 */
 
-#include "tensor_iterator_inst.h"
+#include "loop_inst.h"
 
 #include "error_handler.h"
 #include "json_object.h"
@@ -24,12 +24,12 @@
 #include <algorithm>
 
 namespace cldnn {
-primitive_type_id tensor_iterator::type_id() {
-    static primitive_type_base<tensor_iterator> instance;
+primitive_type_id loop::type_id() {
+    static primitive_type_base<loop> instance;
     return &instance;
 }
 
-static bool check_if_axis_is_set_properly(tensor_iterator_node const & node) {
+static bool check_if_axis_is_set_properly(loop_node const & node) {
     // helper
     auto translate_between_bfyx_and_raw_axis = [](int axis) {
         if (axis == 2)
@@ -39,7 +39,7 @@ static bool check_if_axis_is_set_properly(tensor_iterator_node const & node) {
         return axis;
     };
 
-    std::vector<tensor_iterator::input_mapping> inputs_with_selected_axis;
+    std::vector<loop::input_mapping> inputs_with_selected_axis;
     for (const auto& input : node.ports_desc.input_ports) {
         if (input.axis >= 0)
             inputs_with_selected_axis.push_back(input);
@@ -65,47 +65,52 @@ static bool check_if_axis_is_set_properly(tensor_iterator_node const & node) {
     return true;
 }
 
-layout tensor_iterator_inst::calc_output_layout(tensor_iterator_node const & node) {
-    if (!check_if_axis_is_set_properly(node))
-        CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");
-    // getting number of interations
-    int port_to_iterate_throgh = node.ports_desc.find_input_port_with_selected_axis();
-    node.iteration_axis = -1;
-    if (port_to_iterate_throgh == -1) {
-        node.iterations = 1;
-    } else {
-        node.iteration_axis = node.ports_desc.input_ports[port_to_iterate_throgh].axis;
-        node.iterations = node.get_dependency(port_to_iterate_throgh).get_output_layout().size.raw[node.iteration_axis];
-    }
-
-    //TODO: check inputs
-    node.build_body_program();
-    auto outputs = node.get_body_program()->get_outputs();
-    for (auto output : outputs) {
-        layout l = output->get_output_layout();
-        output->set_output_layout(l);
-    }
-
-    assert(node.ports_desc.output_ports.size() == 1);
-    primitive_id main_output_id = node.ports_desc.output_ports[0];
-    if (node.is_output_working_as_backedge())
-        main_output_id += node.backedge_suffix;
-
-    // finds internal output
-    auto target = std::find_if(outputs.begin(), outputs.end(), [&](const cldnn::program_node * output) {
-        return output->id() == main_output_id;
-    });
-
-    if (target == outputs.end())
-        CLDNN_ERROR_MESSAGE(node.id(), "output not found");
-
-    layout ti_output_layout = (*target)->get_output_layout();
-    if (port_to_iterate_throgh != -1)
-         ti_output_layout.size.raw[node.iteration_axis] = node.iterations;
-    return ti_output_layout;
+layout loop_inst::calc_output_layout(loop_node const & node) {
+    // TODO: implement
+    return layout();
 }
 
-std::string tensor_iterator_inst::to_string(tensor_iterator_node const & node) {
+// layout loop_inst::calc_output_layout(loop_node const & node) {
+//     if (!check_if_axis_is_set_properly(node))
+//         CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");
+//     // getting number of interations
+//     int port_to_iterate_throgh = node.ports_desc.find_input_port_with_selected_axis();
+//     node.iteration_axis = -1;
+//     if (port_to_iterate_throgh == -1) {
+//         node.iterations = 1;
+//     } else {
+//         node.iteration_axis = node.ports_desc.input_ports[port_to_iterate_throgh].axis;
+//         node.iterations = node.get_dependency(port_to_iterate_throgh).get_output_layout().size.raw[node.iteration_axis];
+//     }
+
+//     //TODO: check inputs
+//     node.build_body_program();
+//     auto outputs = node.get_body_program()->get_outputs();
+//     for (auto output : outputs) {
+//         layout l = output->get_output_layout();
+//         output->set_output_layout(l);
+//     }
+
+//     assert(node.ports_desc.output_ports.size() == 1);
+//     primitive_id main_output_id = node.ports_desc.output_ports[0];
+//     if (node.is_output_working_as_backedge())
+//         main_output_id += node.backedge_suffix;
+
+//     // finds internal output
+//     auto target = std::find_if(outputs.begin(), outputs.end(), [&](const cldnn::program_node * output) {
+//         return output->id() == main_output_id;
+//     });
+
+//     if (target == outputs.end())
+//         CLDNN_ERROR_MESSAGE(node.id(), "output not found");
+
+//     layout ti_output_layout = (*target)->get_output_layout();
+//     if (port_to_iterate_throgh != -1)
+//          ti_output_layout.size.raw[node.iteration_axis] = node.iterations;
+//     return ti_output_layout;
+// }
+
+std::string loop_inst::to_string(loop_node const & node) {
     auto desc = node.get_primitive();
     auto node_info = node.desc_to_json();
 
@@ -118,7 +123,7 @@ std::string tensor_iterator_inst::to_string(tensor_iterator_node const & node) {
     return primitive_description.str();
 }
 
-tensor_iterator_inst::typed_primitive_inst(network_impl & network, tensor_iterator_node const & node)
+loop_inst::typed_primitive_inst(network_impl & network, loop_node const & node)
     : parent(network, node),
       body_network(node.get_program().get_engine().allocate_network(
                                                      *node.get_body_program(),
