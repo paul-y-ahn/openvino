@@ -1568,10 +1568,10 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
                 var_input1 = get_input(1);
             } else if (fused_deps.size() == 1) {
                 var_input0 = get_input(0);
-                var_input1 = ConvertToOutputType(GetOutputVarName(in_var, fused_deps[0]), vec_size);
+                var_input1 = GetOutputVarName(in_var, fused_deps[0]);
             } else {
-                var_input0 = ConvertToOutputType(GetOutputVarName(in_var, fused_deps[0]), vec_size);
-                var_input1 = ConvertToOutputType(GetOutputVarName(in_var, fused_deps[1]), vec_size);
+                var_input0 = GetOutputVarName(in_var, fused_deps[0]);
+                var_input1 = GetOutputVarName(in_var, fused_deps[1]);
             }
             auto tmp_var = out_var + "_tmp";
             op_decls += "\\\n\t" + GetType(get_acc_t(), vec_size) + " " + tmp_var + " = " + var_input0 + op + var_input1 + ";";
