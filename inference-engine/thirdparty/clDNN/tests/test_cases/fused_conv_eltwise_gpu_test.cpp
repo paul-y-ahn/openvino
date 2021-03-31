@@ -91,6 +91,7 @@ TEST(fused_conv_eltwise, yolov5_fused_eltw_pattern_01_with_ref_b_fs_yx_fsv16_f32
     auto&& out_layout_act = output_act.get_layout();
     auto out_act_ptr = output_act.pointer<uint8_t>();
 
+    EXPECT_EQ(network_act.get_all_primitive_ids().size(), size_t(5));
     EXPECT_EQ(out_layout_act.format, format::b_fs_yx_fsv16);
     EXPECT_EQ(out_layout_act.size.batch[0], 1);
     EXPECT_EQ(out_layout_act.size.feature[0], 128);
@@ -209,6 +210,7 @@ TEST(fused_conv_eltwise, yolov5_fused_eltw_pattern_02_with_ref_b_fs_yx_fsv16_f32
     auto&& out_layout_act = output_act.get_layout();
     auto out_act_ptr = output_act.pointer<uint8_t>();
 
+    EXPECT_EQ(network_act.get_all_primitive_ids().size(), size_t(4));
     EXPECT_EQ(out_layout_act.format, format::b_fs_yx_fsv16);
     EXPECT_EQ(out_layout_act.size.batch[0], 1);
     EXPECT_EQ(out_layout_act.size.feature[0], 128);
@@ -316,6 +318,7 @@ TEST(fused_conv_eltwise, yolov5_fused_eltw_pattern_03_with_ref_b_fs_yx_fsv16_f32
     auto&& out_layout_act = output_act.get_layout();
     auto out_act_ptr = output_act.pointer<uint8_t>();
 
+    EXPECT_EQ(network_act.get_all_primitive_ids().size(), size_t(5));
     EXPECT_EQ(out_layout_act.format, format::b_fs_yx_fsv16);
     EXPECT_EQ(out_layout_act.size.batch[0], 1);
     EXPECT_EQ(out_layout_act.size.feature[0], 128);
