@@ -1475,6 +1475,7 @@ JitConstants FusedOpsCodeGenerator::MakeLoadJitConstants(const FusedOpsConfigura
     return jit;
 }
 
+#define USE_TEST
 JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfiguration& conf,
                                                        const std::string in_var, const Datatype in_type,
                                                        std::string& out_var) const {
@@ -1485,7 +1486,9 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
     auto idx = conf.bfzyx_idx_order;
     std::string shuffle_var = conf.shuffle_var_name;
     bool is_shuffled = false;
-
+#ifdef USE_TEST
+    auto& fused_deps = desc.fused_deps_op_id;
+#endif
     out_var = GetOutputVarName(in_var, desc.op_id);
     auto out_type = desc.output_tensor.GetDType();
 
@@ -1521,8 +1524,13 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
     };
 
     auto get_input = [&](size_t index) -> std::string {
-        auto in_name = index == 0 ? in_var : GetInputVarName(index - 1, is_shuffled, shuffle_var);
-        auto tensor_type = (index == 0 || desc.tensors.empty()) ? in_type : desc.tensors[index - 1].GetDType();
+        if (fused_deps.size() > index) {
+            return ConvertToOutputType(GetOutputVarName(in_var, fused_deps[index]), vec_size);
+        }
+
+        index -= fused_deps.size();
+        auto in_name = (index < desc.tensors.size()) ? GetInputVarName(index, is_shuffled, shuffle_var) : in_var;
+        auto tensor_type = (index < desc.tensors.size()) ?  desc.tensors[index].GetDType() : in_type;
         auto acc_t = get_acc_t();
 
         if (tensor_type != acc_t)
@@ -1560,37 +1568,27 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
             default:
                 throw std::runtime_error("[clDNN] Eltwise mode is not supported in fused ops codegen");
             }
-            std::string var_input0 = "";
-            std::string var_input1 = "";
-            auto& fused_deps = desc.fused_deps_op_id;
-            if (fused_deps.empty()) {
-                var_input0 = get_input(0);
-                var_input1 = get_input(1);
-            } else if (fused_deps.size() == 1) {
-                var_input0 = get_input((desc.tensors.empty()? 0 : 1));
-                var_input1 = ConvertToOutputType(GetOutputVarName(in_var, fused_deps[0]), vec_size);
-            } else {
-                var_input0 = ConvertToOutputType(GetOutputVarName(in_var, fused_deps[0]), vec_size);
-                var_input1 = ConvertToOutputType(GetOutputVarName(in_var, fused_deps[1]), vec_size);
-            }
+
             auto tmp_var = out_var + "_tmp";
-            op_decls += "\\\n\t" + GetType(get_acc_t(), vec_size) + " " + tmp_var + " = " + var_input0 + op + var_input1 + ";";
+            op_decls += "\\\n\t" + GetType(get_acc_t(), vec_size) + " " + tmp_var + " = " + get_input(0) + op + get_input(1) + ";";
             op_decls += "\\\n\t" + GetOutputType(vec_size) + " " + out_var + " = " + ConvertToOutputType(tmp_var, vec_size) + ";";
-            std::cout << conf.suffix << " :: " << op_decls << std::endl;
             break;
         }
         case KernelType::QUANTIZE: {
             auto p = desc.GetOpParams<quantize_fuse_params>();
             if (!p)
                 throw std::runtime_error("[clDNN] Quantize fuse params can't be nullptr");
-
+#ifdef USE_TEST
+            std::string in_converted = (fused_deps.empty()) ? in_var : GetOutputVarName(in_var, fused_deps[0]);
+#else
             std::string in_converted = in_var;
+#endif
             Datatype tmp_type = Datatype::F32;
             std::string tmp_type_str = GetType(tmp_type, vec_size);
             std::string tmp_var = out_var + "_tmp";
 
             if (in_type != tmp_type) {
-                in_converted = ConvertToType(in_var, tmp_type, vec_size);
+                in_converted = ConvertToType(in_converted, tmp_type, vec_size);
             }
 
             auto post_scale = p->per_tensor_output_scale ? Broadcast(std::to_string(p->out_scale), tmp_type, vec_size)
@@ -1632,7 +1630,12 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
         case KernelType::ACTIVATION: {
             auto p = desc.GetOpParams<activation_fuse_params>();
             base_activation_params activation_p = p->param;
-            op_decls += "\\\n\t" + GetOutputType(vec_size) + " " + out_var + " = " + ConvertToOutputType(in_var, vec_size) + ";";
+#ifdef USE_TEST
+            std::string new_in_var = (fused_deps.empty()) ? in_var : GetOutputVarName(in_var, fused_deps[0]);
+#else
+            std::string new_in_var = in_var;
+#endif
+            op_decls += "\\\n\t" + GetOutputType(vec_size) + " " + out_var + " = " + ConvertToOutputType(new_in_var, vec_size) + ";";
             if (activation_p.function != ActivationFunction::NONE) {
                 auto suffix = "_FUSED_OP"+std::to_string(desc.op_id) + conf.suffix;
                 std::string nl_m = std::to_string(activation_p.m);
@@ -1661,6 +1664,7 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
         default: break;
     }
 
+    // std::cout << std::to_string(desc.op_id) << " - " << conf.suffix << " :: " << op_decls << std::endl;
     jit.AddConstant(MakeJitConstant("FUSED_OP"+std::to_string(desc.op_id)+"_ACTION" + conf.suffix, op_decls));
 
     return jit;
