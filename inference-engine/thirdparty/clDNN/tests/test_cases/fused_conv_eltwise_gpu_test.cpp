@@ -214,6 +214,7 @@ TEST(fused_conv_eltwise, yolov5_fused_eltw_unit_test_passed_02_with_ref_b_fs_yx_
         eltwise("eltwise3", "eltwise1", "eltwise2", eltwise_mode::prod),
         reorder("out_reorder", "eltwise3", format::bfyx, data_types::f32));
 
+
     build_options opt_ref;
     opt_ref.set_option(build_option::optimize_data(false));
     network network_ref(engine, topology_ref, opt_ref);
@@ -328,7 +329,7 @@ TEST(fused_conv_eltwise, yolov5_fused_eltw_unit_test_failed_02_with_ref_b_fs_yx_
         eltwise("eltwise1", "conv", "sum_input1", eltwise_mode::sum),
         eltwise("eltwise2", "conv", "sum_input2", eltwise_mode::sum),
         concatenation("concat",
-                    {"conv", "eltwise1", "eltwise2"},
+                    {"eltwise1", "eltwise2"},
                     concatenation::concatenation_axis::along_f,
                     data_types::i8,
                     padding{{0, 0, 0, 0}, 0}),
@@ -348,7 +349,7 @@ TEST(fused_conv_eltwise, yolov5_fused_eltw_unit_test_failed_02_with_ref_b_fs_yx_
         eltwise("eltwise1", "conv", "sum_input1", eltwise_mode::sum),
         eltwise("eltwise2", "conv", "sum_input2", eltwise_mode::sum),
         concatenation("concat",
-                    {"conv", "eltwise1", "eltwise2"},
+                    {"eltwise1", "eltwise2"},
                     concatenation::concatenation_axis::along_f,
                     data_types::i8,
                     padding{{0, 0, 0, 0}, 0}),
