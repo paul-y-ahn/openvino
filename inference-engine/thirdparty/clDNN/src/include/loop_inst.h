@@ -40,6 +40,7 @@ private:
     primitive_map_cref_t output_primitive_map;
     bool use_current_iteration;
     bool use_execution_condition;
+    bool output_need_concat;
     mutable program_impl::ptr body_program;
     mutable std::map<primitive_id, memory_impl::ptr> backedge_mem_impls;
     mutable std::map<primitive_id, std::shared_ptr<mutable_data>> backedge_layers;
@@ -61,10 +62,10 @@ public:
         : parent(prim, prog),
           body(*this->get_primitive()->body.get()),
           use_current_iteration(!this->get_primitive()->current_iteration_id.empty()),
-          use_execution_condition(!this->get_primitive()->execution_condition_id.empty())
-        {
+          use_execution_condition(!this->get_primitive()->execution_condition_id.empty()) {
             input_primitive_map = this->get_primitive_mapping(this->get_primitive()->primitive_map, loop::INPUT);
             output_primitive_map = this->get_primitive_mapping(this->get_primitive()->primitive_map, loop::OUTPUT);
+            output_need_concat = output_primitive_map.begin()->second.get().axis >= 0;
         }
 
     mutable int iteration_axis;
@@ -79,6 +80,7 @@ public:
 
     bool is_current_iteration_used() const { return use_current_iteration; }
     bool is_execution_condition_used() const { return use_execution_condition; }
+    bool need_output_concat() const { return output_need_concat; }
 
     static const loop::primitive_mapping* find_primitive_mapping(const primitive_id& external_id,
         const primitive_map_t& primitive_map,
@@ -174,8 +176,14 @@ public:
     void build_body_program() const {
         const std::vector<cldnn::program_node *>& deps = get_dependencies();
         // setup internal inputs
+        const primitive_id& trip_count_id = get_trip_count_id();
+        const primitive_id& initial_execution = get_initial_execution_id();
+        const primitive_id& num_iteration = get_num_iteration_id();
         for (const cldnn::program_node * dep : deps) {
             const primitive_id& id = dep->id();
+            if (id == trip_count_id || id == initial_execution || id == num_iteration) {
+                continue;
+            }
             assert(input_primitive_map.count(id));
             const loop::primitive_mapping& input_rule = input_primitive_map.at(id).get();
             layout calculated_layout = calc_body_input_layout(input_rule);
@@ -199,9 +207,6 @@ public:
                 output_is_backedge = true;
                 break;
             }
-        }
-        if (!output_is_backedge) {
-            output_names.insert(output_mapping.internal_id);
         }
 
         // add current_iteration_id in body network, execution_condition_id if exist
@@ -242,6 +247,8 @@ public:
     const primitive_id& get_initial_execution_id() const { return get_primitive()->initial_execution_id; }
     const primitive_id& get_current_iteration_id() const { return get_primitive()->current_iteration_id; }
     const primitive_id& get_execution_condition_id() const { return get_primitive()->execution_condition_id; }
+    const primitive_id& get_num_iteration_id() const { return get_primitive()->num_iteration_id; }
+    const topology& get_body_topology() const { return get_primitive()->body; }
 };
 
 using loop_node = typed_program_node<loop>;
@@ -253,7 +260,6 @@ class typed_primitive_inst<loop> : public typed_primitive_inst_base<loop> {
 public:
     static layout calc_output_layout(const loop_node& node);
     static std::string to_string(const loop_node& node);
-    static const int32_t MAX_ITERATION = 128;
 
 public:
     typed_primitive_inst(network_impl& network, const loop_node& node);
