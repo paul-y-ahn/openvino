@@ -256,7 +256,6 @@ private:
     void post_optimize_graph(bool is_internal);
     void cleanup();
     void transfer_memory_to_device();
-    void run_internal_program_build();
 
     /*
     ** Analysis functions

@@ -353,15 +353,12 @@ void program_impl::set_options() {
     }
 }
 
-void program_impl::run_internal_program_build() { apply_opt_pass<build_internal_program>(); }
-
 void program_impl::build_program(bool is_internal) {
     init_graph();
     { pre_optimize_graph(is_internal); }
     run_graph_compilation();
     { post_optimize_graph(is_internal); }
     prepare_memory_dependencies();
-    run_internal_program_build();
     engine->compile_program(*this);
 
     if (!is_internal)
