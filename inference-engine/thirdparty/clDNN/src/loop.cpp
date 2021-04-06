@@ -33,6 +33,8 @@ primitive_type_id loop::type_id() {
     return &instance;
 }
 
+static int32_t MAX_ITERATION = 128;
+
 static bool check_if_axis_is_set_properly(loop_node const & node) {
     // check if all iteration are performed on the same axis
     const auto& primitive_map = node.get_primitive()->primitive_map;
@@ -85,27 +87,38 @@ static bool check_if_axis_is_set_properly(loop_node const & node) {
 }
 
 layout loop_inst::calc_output_layout(loop_node const & node) {
+    // body program should be built here to calculate body input layout
+    // from outputs of loop's dependency and calculate loop output layout
+    // from the outputs of body program
+    node.build_body_program();
+
+    // type checks
+    const primitive_id& num_iteration_id = node.get_num_iteration_id();
+    if (!node.get_program().get_node(num_iteration_id).is_type<mutable_data>()) {
+        CLDNN_ERROR_MESSAGE(node.id(), "num_iteration is not mutable_data");
+    }
+
     if (!check_if_axis_is_set_properly(node)) {
         CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");
     }
 
-    const auto& loopPrimitive = node.get_primitive();
+
     const auto& output_primitive_map = node.get_output_primitive_map();
 
     // assert single output
     assert(output_primitive_map.size() == 1);
-
-    // set body network output
-    auto body_outputs = node.get_body_program()->get_outputs();
-    for (auto output : body_outputs) {
-        layout l = output->get_output_layout();
-        output->set_output_layout(l);
-    }
+    // // set body network output
+    // const auto& body_outputs = node.get_body_program()->get_outputs();
+    // for (auto output : body_outputs) {
+    //     layout l = output->get_output_layout();
+    //     output->set_output_layout(l);
+    // }
 
     // can internal_id and external_id have the same id ?
 
     // finds internal output
     const auto& output_mapping = output_primitive_map.begin()->second.get();
+    const auto& body_outputs = node.get_body_program()->get_outputs();
     const primitive_id& output_internal_id = output_mapping.internal_id;
     auto target = std::find_if(body_outputs.begin(), body_outputs.end(), [&](const cldnn::program_node * output) {
         return output->id() == output_internal_id;
@@ -114,13 +127,12 @@ layout loop_inst::calc_output_layout(loop_node const & node) {
         CLDNN_ERROR_MESSAGE(node.id(), "output not found");
     }
 
-
     // set body output layout
-    layout ti_output_layout = (*target)->get_output_layout();
+    layout loop_output_layout = (*target)->get_output_layout();
     const int axis_to_iterate_throgh = output_mapping.axis;
     if (axis_to_iterate_throgh != -1)
-            ti_output_layout.size.raw[axis_to_iterate_throgh] = MAX_ITERATION;
-    return ti_output_layout;
+        loop_output_layout.size.raw[axis_to_iterate_throgh] = MAX_ITERATION;
+    return loop_output_layout;
 }
 
 std::string loop_inst::to_string(const loop_node & node) {
@@ -159,6 +171,7 @@ loop_inst::typed_primitive_inst(network_impl & network, loop_node const & node)
                                                      *node.get_body_program(),
                                                      network.get_stream_id(),
                                                      true)) {
+    // TODO(cldnn loop): move validation code in calc_output_layout to here
     if (!check_if_axis_is_set_properly(node))
         CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");
 }
