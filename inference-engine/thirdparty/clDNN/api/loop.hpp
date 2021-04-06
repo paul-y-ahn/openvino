@@ -85,6 +85,7 @@ namespace cldnn {
 /// topology.add(loop);
 /// // output will be accessble by output_id
 /// \endcode
+
 struct loop : public primitive_base<loop> {
     CLDNN_DECLARE_PRIMITIVE(loop)
 
@@ -172,10 +173,14 @@ struct loop : public primitive_base<loop> {
         const padding& output_padding = padding())
             : primitive_base(id, inputs, output_padding),
               body(body),
+              trip_count_id(trip_count_id),
+              initial_execution_id(initial_execution_id),
+              num_iteration_id(num_iteration_id),
               current_iteration_id(current_iteration_id),
               execution_condition_id(execution_condition_id),
               primitive_map(primitive_map),
-              back_edges(back_edges) {}
+              back_edges(back_edges)
+              {}
 
     /// @brief Topology to be recurrently executed.
     topology body;
@@ -203,20 +208,10 @@ struct loop : public primitive_base<loop> {
 
 protected:
     std::vector<std::reference_wrapper<const primitive_id>> get_dependencies() const override {
-        std::vector<std::reference_wrapper<const primitive_id>> ret;
-        ret.reserve(primitive_map.size()+4);
-        for (const auto& input : input) {
-            ret.push_back(std::ref(input));
-        }
-        ret.push_back(std::ref(trip_count_id));
-        ret.push_back(std::ref(initial_execution_id));
-        if (!current_iteration_id.empty())
-            ret.push_back(std::ref(current_iteration_id));
-        if (!execution_condition_id.empty())
-            ret.push_back(std::ref(execution_condition_id));
-        return ret;
+        return {std::ref(trip_count_id), std::ref(initial_execution_id), std::ref(num_iteration_id)};
     }
 };
+
 /// @}
 /// @}
 /// @}
