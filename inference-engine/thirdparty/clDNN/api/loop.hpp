@@ -17,6 +17,7 @@ namespace cldnn {
 /// @addtogroup cpp_primitives Primitives
 /// @{
 
+// TODO(cldnn loop): update example code
 /// @brief Adds primitive which performs recurrent execution of the topology.
 ///
 /// @details
@@ -57,28 +58,28 @@ namespace cldnn {
 /// topology_internal.add<cldnn::data>({const_internal_id, ...});
 ///
 /// topology_internal.add(
-/// 	eltwise(output_internal_id, input_internal_id, const_internal_id, eltwise::add)
+///     eltwise(output_internal_id, input_internal_id, const_internal_id, eltwise::add)
 /// )
 ///
 /// std::vector<primitive_mapping> primitive_map{
-/// 	{primitive_mapping::INPUT, input_id, input_internal_id, axis=1}, // iterating through axis 1
-/// 	{primitive_mapping::INPUT, const_id, const_internal_id},
-/// 	{primitive_mapping::OUTPUT, output_id, output_internal_id, axis=1}, // will be concatenated by axis 1
+///     {primitive_mapping::INPUT, input_id, input_internal_id, axis=1}, // iterating through axis 1
+///     {primitive_mapping::INPUT, const_id, const_internal_id},
+///     {primitive_mapping::OUTPUT, output_id, output_internal_id, axis=1}, // will be concatenated by axis 1
 /// };
 ///
 /// std::vector<backedge_mapping> backedges {
-/// 	{output_internal_id, input_internal_id}
+///     {output_internal_id, input_internal_id}
 /// };
 ///
 /// cldnn::loop loop(
-/// 	"loop",
-/// 	{input_id, const_id},
-/// 	topology_internal,
-/// 	max_iteration_id,
-/// 	initial_condition_id,
-/// 	loop_condition_id,
-/// 	primitive_map,
-/// 	backedges
+///     "loop",
+///     {input_id, const_id},
+///     topology_internal,
+///     max_iteration_id,
+///     initial_condition_id,
+///     loop_condition_id,
+///     primitive_map,
+///     backedges
 /// );
 ///
 /// topology.add(loop);
@@ -146,6 +147,7 @@ struct loop : public primitive_base<loop> {
     /// @param initial_execution_condition_id Data primitive id in external topology specifying initial execution
     ///                                       condition. Its data primitive should have 1 integer element. Zero means
     ///                                       loop will not be executed, otherwise loop will be executed.
+    /// @param num_iteration_id mutable_data primitive id to get the actual number of loop iterations.
     /// @param current_iteration_id Optional data primitive id in the body network to specify current iteration.
     ///                             If current_iteration_id is specified but body does not have data whose primitive
     ///                             id is same as current_iteration_id, data primitive will be added in the body network.
@@ -162,10 +164,11 @@ struct loop : public primitive_base<loop> {
         const topology& body,
         const primitive_id& trip_count_id,
         const primitive_id& initial_execution_id,
+        const primitive_id& num_iteration_id,
+        const std::vector<primitive_mapping>& primitive_map,
+        const std::vector<backedge_mapping>& back_edges,
         const primitive_id& current_iteration_id = primitive_id(),
         const primitive_id& execution_condition_id = primitive_id(),
-        const std::vector<primitive_mapping>& primitive_map = {},
-        const std::vector<backedge_mapping>& back_edges = {},
         const padding& output_padding = padding())
             : primitive_base(id, inputs, output_padding),
               body(body),
@@ -183,6 +186,9 @@ struct loop : public primitive_base<loop> {
     /// @brief Data primitive id in external topology specifying initial execution condition.
     primitive_id initial_execution_id;
 
+    /// @brief mutable_data primitive id to get the actual number of loop iterations.
+    primitive_id num_iteration_id;
+
     /// @brief Data primitive id in the body network to store current iteration
     primitive_id current_iteration_id;
 
@@ -199,7 +205,7 @@ protected:
     std::vector<std::reference_wrapper<const primitive_id>> get_dependencies() const override {
         std::vector<std::reference_wrapper<const primitive_id>> ret;
         ret.reserve(primitive_map.size()+4);
-        for (const auto& input: input) {
+        for (const auto& input : input) {
             ret.push_back(std::ref(input));
         }
         ret.push_back(std::ref(trip_count_id));
