@@ -23,6 +23,10 @@
 #include <exception>
 #include <algorithm>
 
+// TODO(cldnn loop): clDNN/src/loop.cpp calc_output_layout
+//   - [x] loop_inst::calc_output_layout
+//   - [x] loop_inst::to_string
+//   - [x] loop_inst::typed_primitive_inst
 namespace cldnn {
 primitive_type_id loop::type_id() {
     static primitive_type_base<loop> instance;
@@ -30,95 +34,121 @@ primitive_type_id loop::type_id() {
 }
 
 static bool check_if_axis_is_set_properly(loop_node const & node) {
-    // helper
-    auto translate_between_bfyx_and_raw_axis = [](int axis) {
-        if (axis == 2)
-            return 3;
-        if (axis == 3)
-            return 2;
-        return axis;
-    };
-
-    std::vector<loop::input_mapping> inputs_with_selected_axis;
-    for (const auto& input : node.ports_desc.input_ports) {
-        if (input.axis >= 0)
-            inputs_with_selected_axis.push_back(input);
+    // check if all iteration are performed on the same axis
+    const auto& primitive_map = node.get_primitive()->primitive_map;
+    std::vector<std::reference_wrapper<const loop::primitive_mapping>> input_with_axis_iteration;
+    for (const auto& input : primitive_map) {
+        if (input.type == loop::INPUT && input.axis >= 0) {
+            input_with_axis_iteration.push_back(std::cref(input));
+        }
     }
 
-    // check if all iteration are performed on the same axis
-    int common_axis = -1;
-    for (const auto& input : inputs_with_selected_axis) {
-        if (common_axis == -1)
-            common_axis = input.axis;
-        else if (common_axis != input.axis)
-            return false;
+    // check all iteration axis has the same size
+    const std::vector<cldnn::program_node *>& dependencies = node.get_dependencies();
+    int32_t iteration_size = -1;
+    for (const auto& pm : input_with_axis_iteration) {
+        auto found = std::find_if(dependencies.begin(), dependencies.end(), [&pm](const cldnn::program_node * node){
+            return node->id() == pm.get().external_id;
+        });
+        assert(found != dependencies.end());
+        const layout input_layout = (*found)->get_output_layout();
+        const auto shape = input_layout.size.sizes(input_layout.format);
+        const int32_t iteration_axis = node.convert_to_raw_axis(pm.get().axis, shape.size());
+        if (iteration_size < 0) {
+            iteration_size = shape[iteration_axis];
+        } else {
+            if (iteration_size != shape[iteration_axis]) {
+                return false;
+            }
+        }
     }
 
     // check if size of iteration axis is 1
-    for (const auto& input : inputs_with_selected_axis) {
-        tensor size = node.get_dependency(input.from).get_output_layout().size;
-        for (int i = translate_between_bfyx_and_raw_axis(input.axis) - 1; i >= 0; i--) {
-            if (size.raw[translate_between_bfyx_and_raw_axis(i)] != 1)
-                return false;
+    for (const auto& input_ref : input_with_axis_iteration) {
+        const loop::primitive_mapping& input = input_ref.get();
+        auto dep = std::find_if(dependencies.begin(), dependencies.end(),
+            [&input](const cldnn::program_node *dep) { return input.external_id == dep->id(); });
+
+        // if corresponding external id is not found
+        if (dep == dependencies.end()) {
+            return false;
         }
+
+        // TODO(cldnn loop): need this check? axis 제외한 나머지가 1이어야 한다
+        // tensor size = node.get_dependency(input.from).get_output_layout().size;
+        // for (int i = translate_between_bfyx_and_raw_axis(input.axis) - 1; i >= 0; i--) {
+        //     if (size.raw[translate_between_bfyx_and_raw_axis(i)] != 1)
+        //         return false;
+        // }
     }
     return true;
 }
 
 layout loop_inst::calc_output_layout(loop_node const & node) {
-    // TODO: implement
-    return layout();
+    if (!check_if_axis_is_set_properly(node)) {
+        CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");
+    }
+
+    const auto& loopPrimitive = node.get_primitive();
+    const auto& output_primitive_map = node.get_output_primitive_map();
+
+    // assert single output
+    assert(output_primitive_map.size() == 1);
+
+    // set body network output
+    auto body_outputs = node.get_body_program()->get_outputs();
+    for (auto output : body_outputs) {
+        layout l = output->get_output_layout();
+        output->set_output_layout(l);
+    }
+
+    // can internal_id and external_id have the same id ?
+
+    // finds internal output
+    const auto& output_mapping = output_primitive_map.begin()->second.get();
+    const primitive_id& output_internal_id = output_mapping.internal_id;
+    auto target = std::find_if(body_outputs.begin(), body_outputs.end(), [&](const cldnn::program_node * output) {
+        return output->id() == output_internal_id;
+    });
+    if (target == body_outputs.end()) {
+        CLDNN_ERROR_MESSAGE(node.id(), "output not found");
+    }
+
+
+    // set body output layout
+    layout ti_output_layout = (*target)->get_output_layout();
+    const int axis_to_iterate_throgh = output_mapping.axis;
+    if (axis_to_iterate_throgh != -1)
+            ti_output_layout.size.raw[axis_to_iterate_throgh] = MAX_ITERATION;
+    return ti_output_layout;
 }
 
-// layout loop_inst::calc_output_layout(loop_node const & node) {
-//     if (!check_if_axis_is_set_properly(node))
-//         CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");
-//     // getting number of interations
-//     int port_to_iterate_throgh = node.ports_desc.find_input_port_with_selected_axis();
-//     node.iteration_axis = -1;
-//     if (port_to_iterate_throgh == -1) {
-//         node.iterations = 1;
-//     } else {
-//         node.iteration_axis = node.ports_desc.input_ports[port_to_iterate_throgh].axis;
-//         node.iterations = node.get_dependency(port_to_iterate_throgh).get_output_layout().size.raw[node.iteration_axis];
-//     }
-
-//     //TODO: check inputs
-//     node.build_body_program();
-//     auto outputs = node.get_body_program()->get_outputs();
-//     for (auto output : outputs) {
-//         layout l = output->get_output_layout();
-//         output->set_output_layout(l);
-//     }
-
-//     assert(node.ports_desc.output_ports.size() == 1);
-//     primitive_id main_output_id = node.ports_desc.output_ports[0];
-//     if (node.is_output_working_as_backedge())
-//         main_output_id += node.backedge_suffix;
-
-//     // finds internal output
-//     auto target = std::find_if(outputs.begin(), outputs.end(), [&](const cldnn::program_node * output) {
-//         return output->id() == main_output_id;
-//     });
-
-//     if (target == outputs.end())
-//         CLDNN_ERROR_MESSAGE(node.id(), "output not found");
-
-//     layout ti_output_layout = (*target)->get_output_layout();
-//     if (port_to_iterate_throgh != -1)
-//          ti_output_layout.size.raw[node.iteration_axis] = node.iterations;
-//     return ti_output_layout;
-// }
-
-std::string loop_inst::to_string(loop_node const & node) {
+std::string loop_inst::to_string(const loop_node & node) {
     auto desc = node.get_primitive();
     auto node_info = node.desc_to_json();
 
-    json_composite ti_info;
-    ti_info.add("body", desc->body.get_primitive_ids());
+    // TODO(cldnn loop): loop_inst::to_string
+    //   - [x] inputs
+    //   - [x] body: body input
+    //   - [x] trip_count_id
+    //   - [x] initial_execution_id
+    //   - [x] current_iteration_id if not empty
+    //   - [x] execution_condition_id if not empty
+    //   - [] primitive_map [json_composite{external_id, internal_id, axis, ...}]
+    //   - [] back_edges [json_composite{from, to}]
+    json_composite loop_info;
+    loop_info.add("body input id", desc->body.get_primitive_ids());
+    loop_info.add("trip_count_id", desc->trip_count_id);
+    loop_info.add("initial_execution_id", desc->initial_execution_id);
+    loop_info.add("current_iteration_id", desc->current_iteration_id);
+    loop_info.add("execution_condition_id", desc->execution_condition_id);
+    // TODO(cldnn loop): Fix json_composite to take std::vector<json_composite>()
+    // loop_info.add("primitive_map", std::vector<json_composite>());
+    // loop_info.add("back_edges", std::vector<json_composite>());
+
 
     std::stringstream primitive_description;
-    node_info->add("tensor iterator pooling info", ti_info);
+    node_info->add("loop info", loop_info);
     node_info->dump(primitive_description);
     return primitive_description.str();
 }
