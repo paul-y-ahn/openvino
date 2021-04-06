@@ -820,7 +820,7 @@ void prepare_primitive_fusing::fuse_simple_primitives(program_impl &p) {
                         return;
                     }
 
-                    for(auto& user : c_node.first->get_users()) {
+                    for (auto& user : c_node.first->get_users()) {
                         if (!user->is_type<eltwise>() || user->get_primitive()->input.size() != 2 || user->is_output()) {
                             return;
                         }
@@ -831,7 +831,7 @@ void prepare_primitive_fusing::fuse_simple_primitives(program_impl &p) {
                             node_queue.push_back(std::make_pair(user, c_node.second+1));
                         }
                     }
-                } while(node_queue.size() > 1);
+                } while (node_queue.size() > 1);
             } else {
                 merge_allowed = fused_node->get_users().size() == 1;
             }
