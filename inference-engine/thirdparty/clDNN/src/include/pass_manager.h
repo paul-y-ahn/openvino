@@ -79,6 +79,14 @@ private:
     void run(program_impl& p) override;
 };
 
+class build_internal_program : public base_pass {
+public:
+    build_internal_program() : base_pass("build_internal_program") {}
+
+private:
+    void run(program_impl& p) override;
+};
+
 class eltwise_shrinking : public base_pass {
 public:
     eltwise_shrinking() : base_pass("eltwise_shrinking") {}
