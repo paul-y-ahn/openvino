@@ -501,8 +501,9 @@ void prepare_primitive_fusing::fuse_simple_primitives(program_impl &p) {
 
         auto fuse_activation_f = [&](activation_node& activation_node) {
             auto& input_data = activation_node.get_dependency(0);
-            if (input_data.get_users().size() != 1 || activation_node.get_dependencies().size() >= 3)
+            if ((input_data.get_users().size() != 1 && !input_data.has_fused_primitives()) || activation_node.get_dependencies().size() >= 3) {
                 return;
+            }
 
             bool should_fuse = input_data.is_type<binary_convolution>();
 
@@ -810,25 +811,33 @@ void prepare_primitive_fusing::fuse_simple_primitives(program_impl &p) {
             if (fused_node->is_type<convolution>() && fused_node->get_users().size() > 1) {
                 //std::pair<cldnn::program_node*, layer level>
                 std::deque<std::pair<cldnn::program_node*, int>> node_queue;
+                std::vector<cldnn::program_node*> node_history;
                 node_queue.push_back(std::make_pair(fused_node, 0));
 
                 const uint8_t max_levels = 5;
                 do {
-                    auto c_node = node_queue.front();
+                    auto current_node = node_queue.front();
                     node_queue.pop_front();
-                    if (c_node.second > max_levels) {
+                    node_history.push_back(current_node.first);
+                    if (current_node.second > max_levels) {
                         return;
                     }
 
-                    for (auto& user : c_node.first->get_users()) {
-                        if (!user->is_type<eltwise>() || user->get_primitive()->input.size() != 2 || user->is_output()) {
-                            return;
+                    for (auto& user : current_node.first->get_users()) {
+                        if (user->is_output() ||
+                                (!(user->is_type<eltwise>() && user->get_primitive()->input.size() == 2) &&
+                                !(user->is_type<activation>() && user->get_primitive()->input.size() == 1))) {
+                            current_node.second++;
+                            node_queue.push_back(current_node);
+                            break;
                         }
                         auto iter = std::find_if(node_queue.begin(), node_queue.end(), [&](std::pair<cldnn::program_node*, int> element) {
                             return (user->id() == element.first->id());
                         });
                         if (iter == node_queue.end()) {
-                            node_queue.push_back(std::make_pair(user, c_node.second+1));
+                            auto iter2 = std::find(node_history.begin(), node_history.end(), user);
+                            if (iter2 == node_history.end())
+                                node_queue.push_back(std::make_pair(user, current_node.second+1));
                         }
                     }
                 } while (node_queue.size() > 1);
@@ -854,7 +863,6 @@ void prepare_primitive_fusing::fuse_simple_primitives(program_impl &p) {
                 recalc_processing_order = true;
             }
 
-            std::cout << "***** " << node.id() << " will be fused to " << fused_node->id() << " !!!! " <<  std::endl;
             p.fuse_nodes(*fused_node, node, &fusing_history);
         };
 
