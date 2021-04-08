@@ -86,6 +86,21 @@ static bool check_if_axis_is_set_properly(loop_node const & node) {
     return true;
 }
 
+static void validate_backedges(loop_node const & node) {
+    const auto& back_edges = node.get_back_edges();
+    const auto& primitive_map = node.get_primitive_map();
+
+    // check input with iteration axis has backedge
+    for (const auto& back_edge : back_edges) {
+        for (const auto& mapping : primitive_map) {
+            if (mapping.internal_id == back_edge.to && mapping.axis >= 0) {
+                CLDNN_ERROR_MESSAGE(node.id(),
+                    "input with iteration axis should not have backedges");
+            }
+        }
+    }
+}
+
 layout loop_inst::calc_output_layout(loop_node const & node) {
     // body program should be built here to calculate body input layout
     // from outputs of loop's dependency and calculate loop output layout
@@ -130,8 +145,12 @@ layout loop_inst::calc_output_layout(loop_node const & node) {
     // set body output layout
     layout loop_output_layout = (*target)->get_output_layout();
     const int axis_to_iterate_throgh = output_mapping.axis;
-    if (axis_to_iterate_throgh != -1)
-        loop_output_layout.size.raw[axis_to_iterate_throgh] = MAX_ITERATION;
+    if (axis_to_iterate_throgh != -1) {
+        const auto shape = loop_output_layout.size.sizes(loop_output_layout.format);
+        const size_t ndim = shape.size();
+        const size_t raw_axis = node.convert_to_raw_axis(axis_to_iterate_throgh, ndim);
+        loop_output_layout.size.raw[raw_axis] = MAX_ITERATION;
+    }
     return loop_output_layout;
 }
 
@@ -174,6 +193,8 @@ loop_inst::typed_primitive_inst(network_impl & network, loop_node const & node)
     // TODO(cldnn loop): move validation code in calc_output_layout to here
     if (!check_if_axis_is_set_properly(node))
         CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");
+
+    validate_backedges(node);
 }
 
 }  // namespace cldnn
