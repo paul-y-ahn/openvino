@@ -324,6 +324,8 @@ public:
         return layout{ p.data_type, p.default_format, tensor{1, p.in_shape.feature[0], 1, 1} };
     }
 
+
+
     layout get_single_element_layout(T& p) {
         return layout{ p.default_type, p.default_format, tensor{1, 1, 1, 1} };
     }
@@ -833,9 +835,8 @@ INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_prelu_eltwise,
                                              }), );
 
 
-class conv_fp32_multi_eltwise_pattern01 : public ConvFusingTest {};
-
-TEST_P(conv_fp32_multi_eltwise_pattern01, basic) {
+class conv_fp32_multi_eltwise_2 : public ConvFusingTest {};
+TEST_P(conv_fp32_multi_eltwise_2, basic) {
     auto p = GetParam();
     create_topologies(input_layout("input", get_input_layout(p)),
         data("eltwise_data", get_mem(get_output_layout(p))),
@@ -853,7 +854,7 @@ TEST_P(conv_fp32_multi_eltwise_pattern01, basic) {
     execute(p);
 }
 
-INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_pattern01,
+INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_2,
                         ::testing::ValuesIn(std::vector<bc_test_params>{
                                              bc_test_params{CASE_CONV_FP32_2, 2, 4},
                                              bc_test_params{CASE_CONV_FP32_3, 2, 4},
@@ -864,8 +865,81 @@ INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_pattern01,
                                              bc_test_params{CASE_CONV_FP16_4, 2, 4},
                                              }), );
 
-class conv_fp32_multi_eltwise_pattern02 : public ConvFusingTest {};
-TEST_P(conv_fp32_multi_eltwise_pattern02, basic) {
+
+class conv_fp32_multi_eltwise_2_clamp : public ConvFusingTest {};
+
+TEST_P(conv_fp32_multi_eltwise_2_clamp, basic) {
+    auto p = GetParam();
+
+    create_topologies(input_layout("input", get_input_layout(p)),
+        data("eltwise1_data", get_mem(get_output_layout(p))),
+        data("bias", get_mem(get_bias_layout(p))),
+        data("weights", get_mem(get_weights_layout(p))),
+        convolution("conv_prim", "input", { "weights" }, {"bias"}, p.groups, p.stride, p.pad, p.dilation),
+        eltwise("eltwise1", "conv_prim", "eltwise1_data", eltwise_mode::sum),
+        activation("activation", "eltwise1", activation_func::clamp, {0.5f, 2.5f}),
+        eltwise("eltwise2", "activation", "conv_prim", eltwise_mode::prod),
+        reorder("reorder_bfyx", "eltwise2", p.default_format, data_types::f32)
+    );
+    implementation_desc conv_impl = { format::b_fs_yx_fsv16, ""};
+    bo_fused.set_option(build_option::force_implementations({ {"conv_prim", conv_impl} }));
+
+    tolerance = 1e-5f;
+    execute(p);
+}
+
+INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_2_clamp,
+                        ::testing::ValuesIn(std::vector<bc_test_params>{
+                                             bc_test_params{CASE_CONV_FP32_2, 2, 5},
+                                             bc_test_params{CASE_CONV_FP32_3, 2, 5},
+                                             bc_test_params{CASE_CONV_FP32_4, 2, 5},
+
+                                             bc_test_params{CASE_CONV_FP16_2, 2, 5},
+                                             bc_test_params{CASE_CONV_FP16_3, 2, 5},
+                                             bc_test_params{CASE_CONV_FP16_4, 2, 5},
+                                             }), );
+
+
+class conv_fp32_multi_eltwise_4_clamp : public ConvFusingTest {};
+
+TEST_P(conv_fp32_multi_eltwise_4_clamp, basic) {
+    auto p = GetParam();
+
+    create_topologies(input_layout("input", get_input_layout(p)),
+        data("eltwise1_data", get_mem(get_output_layout(p))),
+        data("eltwise2_data", get_mem(get_output_layout(p))),
+        data("eltwise4_data", get_mem(get_output_layout(p))),
+        data("bias", get_mem(get_bias_layout(p))),
+        data("weights", get_mem(get_weights_layout(p))),
+        convolution("conv_prim", "input", { "weights" }, {"bias"}, p.groups, p.stride, p.pad, p.dilation),
+        eltwise("eltwise1_add", "conv_prim", "eltwise1_data", eltwise_mode::sum),
+        activation("activation", "eltwise1_add", activation_func::clamp, {0.5f, 2.5f}),
+        eltwise("eltwise2_mul", "activation", "conv_prim", eltwise_mode::prod),
+        eltwise("eltwise3_div", "eltwise2_mul", "eltwise2_data", eltwise_mode::prod),
+        eltwise("eltwise4_add", "eltwise3_div", "eltwise4_data", eltwise_mode::sum),
+        reorder("reorder_bfyx", "eltwise4_add", p.default_format, data_types::f32)
+    );
+    implementation_desc conv_impl = { format::b_fs_yx_fsv16, ""};
+    bo_fused.set_option(build_option::force_implementations({ {"conv_prim", conv_impl} }));
+
+    tolerance = 1e-5f;
+    execute(p);
+}
+
+INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_4_clamp,
+                        ::testing::ValuesIn(std::vector<bc_test_params>{
+                                             bc_test_params{CASE_CONV_FP32_2, 2, 7},
+                                             bc_test_params{CASE_CONV_FP32_3, 2, 7},
+                                             bc_test_params{CASE_CONV_FP32_4, 2, 7},
+
+                                             bc_test_params{CASE_CONV_FP16_2, 2, 7},
+                                             bc_test_params{CASE_CONV_FP16_3, 2, 7},
+                                             bc_test_params{CASE_CONV_FP16_4, 2, 7},
+                                             }), );
+
+
+class conv_fp32_multi_eltwise_3_fusing : public ConvFusingTest {};
+TEST_P(conv_fp32_multi_eltwise_3_fusing, basic) {
     auto p = GetParam();
     create_topologies(input_layout("input", get_input_layout(p)),
         data("eltwise_data1", get_mem(get_output_layout(p))),
@@ -885,7 +959,7 @@ TEST_P(conv_fp32_multi_eltwise_pattern02, basic) {
     execute(p);
 }
 
-INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_pattern02,
+INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_3_fusing,
                         ::testing::ValuesIn(std::vector<bc_test_params>{
                                              bc_test_params{CASE_CONV_FP32_2, 2, 5},
                                              bc_test_params{CASE_CONV_FP32_3, 2, 5},
@@ -895,6 +969,7 @@ INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_pattern02,
                                              bc_test_params{CASE_CONV_FP16_3, 2, 5},
                                              bc_test_params{CASE_CONV_FP16_4, 2, 5},
                                              }), );
+
 
 
 class conv_fp32_multi_eltwise_quantization : public ConvFusingTest {};
@@ -921,7 +996,6 @@ TEST_P(conv_fp32_multi_eltwise_quantization, basic) {
 INSTANTIATE_TEST_CASE_P(fusings_gpu, conv_fp32_multi_eltwise_quantization,
                         ::testing::ValuesIn(std::vector<bc_test_params>{
                                              bc_test_params{CASE_CONV_FP32_2, 4, 5},
-                                            //  bc_test_params{CASE_CONV_FP32_3, 4, 5}, //???
                                              bc_test_params{CASE_CONV_FP32_4, 4, 5},
 
                                              bc_test_params{CASE_CONV_FP16_2, 4, 5},
