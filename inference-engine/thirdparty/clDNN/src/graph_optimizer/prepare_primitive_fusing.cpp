@@ -354,6 +354,12 @@ void prepare_primitive_fusing::fuse_simple_primitives(program_impl &p) {
         auto node_itr = itr++;
         auto& node = (*node_itr);
 
+        std::cout << node->id() << "{";
+        for (auto user : node->get_users()) {
+            std::cout << user->id() << ", ";
+        }
+        std::cout << "}" << std::endl;
+
         if (node->is_output() || node->is_constant())
             continue;
 

@@ -7,6 +7,7 @@
 #include <string>
 #include <memory>
 #include <utility>
+#include <iostream>
 
 #include <quantize/quantize_kernel_params.h>
 #include <eltwise/eltwise_kernel_base.h>
@@ -1530,6 +1531,11 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
             return in_name;
     };
 
+    std::cout << "desc.tensors: " << desc.tensors.size() << std::endl;
+    for (size_t i = 0; i < (desc.tensors.size() + 1); i++) {
+        std::cout << "var_name : " << get_input(i) << std::endl;
+    }
+
     switch (desc.GetType()) {
         case KernelType::SCALE: {
             auto tmp_var = out_var + "_tmp";
@@ -1647,6 +1653,7 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
         default: break;
     }
 
+    std::cout << ("FUSED_OP"+std::to_string(desc.op_id)+"_ACTION" + conf.suffix) << " " << op_decls << std::endl;
     jit.AddConstant(MakeJitConstant("FUSED_OP"+std::to_string(desc.op_id)+"_ACTION" + conf.suffix, op_decls));
 
     return jit;

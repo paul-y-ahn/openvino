@@ -160,7 +160,9 @@ inline params_t get_default_params(const arg_t& arg, uint32_t split = 1) {
 
     convert_fused_activation_func_params(arg, params.activations);
     size_t op_id = 0;
+    std::cout << "kernel_selector_helper : " << arg.id() << std::endl;
     for (auto& fused_prim : arg.get_fused_primitives()) {
+        std::cout << " - " << fused_prim.node->id() << std::endl;
         kernel_selector::fused_operation_desc desc;
         desc.op_params = fused_prim.node->get_fuse_params();
         if (!desc.op_params) {
@@ -171,6 +173,11 @@ inline params_t get_default_params(const arg_t& arg, uint32_t split = 1) {
         desc.dep_size = fused_prim.deps.size();
         desc.op_id = op_id++;
         desc.output_tensor = convert_data_tensor(fused_prim.output_layout);
+
+        // for (auto& dep : fused_prim.fused_deps) {
+        //     std::cout << dep << ", ";
+        // }
+        // std::cout << "}" << std::endl;
 
         for (size_t i = desc.dep_idx_start; i < desc.dep_idx_start + desc.dep_size; i++) {
             desc.tensors.push_back(convert_data_tensor(arg.get_dependency(i).get_output_layout()));

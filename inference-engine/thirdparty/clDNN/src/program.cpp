@@ -896,6 +896,7 @@ bool program_impl::extract_and_remove(program_node& node) {
 }
 
 void program_impl::fuse_nodes(program_node &fused_node, program_node &peer_node) {
+    std::cout << peer_node.id() << " is fused to " << fused_node.id() << std::endl;
     auto peer_layout = peer_node.get_output_layout();
     fused_primitive_desc local_desc;
     local_desc.node = get_node_ptr(peer_node.id());
