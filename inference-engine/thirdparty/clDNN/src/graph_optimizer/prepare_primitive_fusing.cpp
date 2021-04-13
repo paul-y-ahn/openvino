@@ -358,6 +358,12 @@ void prepare_primitive_fusing::fuse_simple_primitives(program_impl &p) {
         auto node_itr = itr++;
         auto& node = (*node_itr);
 
+        // std::cout << node->id() << "{";
+        // for (auto user : node->get_users()) {
+        //     std::cout << user->id() << ", ";
+        // }
+        // std::cout << "}" << std::endl;
+
         if (node->is_output() || node->is_constant())
             continue;
 
@@ -499,12 +505,68 @@ void prepare_primitive_fusing::fuse_simple_primitives(program_impl &p) {
             return true;
         };
 
+        auto get_users_from_fusing_history = [&](primitive_id id) {
+            std::vector<primitive_id> users;
+            for (auto deps_data : fusing_history) {
+                auto key = deps_data.first;
+                auto deps_vec = deps_data.second;
+                auto iter = std::find(deps_vec.begin(), deps_vec.end(), id);
+                if (iter != deps_vec.end()) {
+                    users.push_back(key);
+                }
+            }
+            return users;
+        };
+
         auto fuse_activation_f = [&](activation_node& activation_node) {
             auto& input_data = activation_node.get_dependency(0);
-            if ((input_data.get_users().size() != 1 && !input_data.has_fused_primitives()) || activation_node.get_dependencies().size() >= 3) {
+            if (activation_node.get_dependencies().size() >= 3)
                 return;
+#if 1
+            if (input_data.get_users().size() != 1) {
+                // If input_data has fused primitives,
+                // find original dependency of activation_node using fusing_history
+                // and check the number of users of it.
+                // If the node has multiple users it's not fusible.
+                if (input_data.has_fused_primitives()) {
+                    size_t num_original_dependencies = 0;
+                    auto iter = fusing_history.find(activation_node.id());
+                    if (iter != fusing_history.end()) {
+                        // Find activation_node's original dependency list
+                        for (auto& prim_id : iter->second) {
+                            // find input_data's fused_prims in the prim_deps_ids
+                            auto& fused_descs = input_data.get_fused_primitives();
+                            auto origin_input_iter = std::find_if(fused_descs.begin(), fused_descs.end(),
+                                                                    [&](cldnn::fused_primitive_desc& desc) {
+                                return (desc.node->id() == prim_id);
+                            });
+                            if (origin_input_iter != fused_descs.end()) {
+                                auto users = get_users_from_fusing_history(origin_input_iter->node->id());
+                                if (users.size() != 1) {
+                                    return;
+                                }
+                                num_original_dependencies++;
+                            }
+                        }
+                    }
+                    // If num_original_dependencies is zero, input_data is original parent
+                    if (num_original_dependencies == 0) {
+                        return;
+                    }
+                } else {
+                    return;
+                }
             }
+#else
 
+            if (input_data.get_users().size() != 1) {
+                for (auto& user : input_data.get_users()) {
+                    if (!user->is_type<eltwise>() && !user->is_type<activation>()) {
+                        return;
+                    }
+                }
+            }
+#endif
             bool should_fuse = input_data.is_type<binary_convolution>();
 
             should_fuse |= input_data.is_type<convolution>() && conv_supports_fusings(input_data.as<convolution>());
