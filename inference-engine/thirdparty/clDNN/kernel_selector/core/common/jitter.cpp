@@ -7,6 +7,9 @@
 #include <string>
 #include <memory>
 #include <utility>
+#ifdef DEBUG_ISSUE
+#include <iostream>
+#endif
 
 #include <quantize/quantize_kernel_params.h>
 #include <eltwise/eltwise_kernel_base.h>
@@ -1646,7 +1649,9 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
         }
         default: break;
     }
-
+#ifdef DEBUG_ISSUE
+    std::cout << ("FUSED_OP"+std::to_string(desc.op_id)+"_ACTION" + conf.suffix) << " " << op_decls << std::endl;
+#endif
     jit.AddConstant(MakeJitConstant("FUSED_OP"+std::to_string(desc.op_id)+"_ACTION" + conf.suffix, op_decls));
 
     return jit;

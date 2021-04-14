@@ -474,6 +474,7 @@ ExecutableNetworkInternal::Ptr clDNNEngine::LoadExeNetworkImpl(const InferenceEn
 
     CLDNNPlugin::Config conf = _impl->m_config;
     UpdateConfig(conf, network, config);
+    conf.graph_dumps_dir = "/home/ahnyoung/cldnn_master/result/func_01/";
 
     CLDNNRemoteCLContext::Ptr context;
 
