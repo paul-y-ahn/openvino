@@ -32,6 +32,7 @@ endif()
 
 # Name of project (helper constant variable).
 set(CLDNN__PROJ_NAME "clDNN")
+set(DEBUG_ISSUE 1)
 
 # Default languages: C, C++.
 project("${CLDNN__PROJ_NAME}")

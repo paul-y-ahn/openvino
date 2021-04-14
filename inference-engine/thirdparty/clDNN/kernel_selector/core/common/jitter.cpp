@@ -7,7 +7,9 @@
 #include <string>
 #include <memory>
 #include <utility>
+#ifdef DEBUG_ISSUE
 #include <iostream>
+#endif
 
 #include <quantize/quantize_kernel_params.h>
 #include <eltwise/eltwise_kernel_base.h>
@@ -1526,23 +1528,10 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
         return Datatype::F32;
     };
 
-    // auto print_type = [&](std::string title, Datatype type) {
-    //     if (type == Datatype::F32) {
-    //         std::cout << title << " : Datatype::F32" << std::endl;
-    //     } else if (type == Datatype::F16) {
-    //         std::cout << title << " : Datatype::F16" << std::endl;
-    //     } else {
-    //         std::cout << title << " : other type" << std::endl;
-    //     }
-    // };
-
     auto get_input = [&](size_t index) -> std::string {
         auto in_name = (index == 0 || desc.tensors.empty()) ? in_var : GetInputVarName(index - 1, is_shuffled, shuffle_var);
         auto tensor_type = (index == 0 || desc.tensors.empty()) ? in_type : desc.tensors[index - 1].GetDType();
         auto acc_t = get_acc_t();
-
-        // print_type(in_name + ", input_type", tensor_type);
-        // print_type(in_name + ", acc_type", acc_t);
 
         if (tensor_type != acc_t)
             return ConvertToType(in_name, acc_t, vec_size);
@@ -1555,9 +1544,6 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
         auto input_type = fused_op_ids[index].second;
         auto acc_type = get_acc_t();
 
-        // print_type(input_name + ", input_type", input_type);
-        // print_type(input_name + ", acc_type", acc_type);
-
         if (input_type != acc_type)
             return ConvertToType(input_name, acc_type, vec_size);
         else
@@ -1566,11 +1552,6 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
 
     // Generate input variable list
     // dst + tensor inputs + fused ops input
-// #define DEBUG_ISSUE
-#ifdef DEBUG_ISSUE
-    std::cout << "fused_op_ids: " << fused_op_ids.size() << std::endl;
-    std::cout << "desc.tensors: " << desc.tensors.size() << std::endl;
-#endif
     if (fused_op_ids.empty() || desc.tensors.empty()) {
         input_vars.push_back(get_input(0));
     }
@@ -1587,13 +1568,6 @@ JitConstants FusedOpsCodeGenerator::MakeOpJitConstants(const FusedOpsConfigurati
     if (input_vars.size() > max_num_input_vars) {
         input_vars.erase(input_vars.begin());
     }
-#ifdef DEBUG_ISSUE
-    print_type("in_type", in_type);
-    print_type("out_type", desc.output_tensor.GetDType());
-    for (auto var_name :  input_vars) {
-        std::cout << "var_name : " << var_name << std::endl;
-    }
-#endif
 
     switch (desc.GetType()) {
         case KernelType::SCALE: {
