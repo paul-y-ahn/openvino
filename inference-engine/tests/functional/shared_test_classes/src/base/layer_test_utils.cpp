@@ -49,6 +49,12 @@ void LayerTestsCommon::Run() {
         LoadNetwork();
         GenerateInputs();
         Infer();
+        {
+            std::string exec_graph_path = "/home/ahnyoung/cldnn/exec_graph_working.xml";
+            InferenceEngine::CNNNetwork execGraphInfo = executableNetwork.GetExecGraphInfo();
+            execGraphInfo.serialize(exec_graph_path);
+            std::cout << "executable graph is stored to " << exec_graph_path << std::endl;
+        }
         Validate();
         s.updateOPsStats(function, PassRate::Statuses::PASSED);
     }
@@ -217,6 +223,7 @@ void LayerTestsCommon::LoadNetwork() {
     cnnNetwork = InferenceEngine::CNNNetwork{function};
     CoreConfiguration(this);
     ConfigureNetwork();
+    core->SetConfig({{ CONFIG_KEY(PERF_COUNT), "YES" }}, "GPU");
     executableNetwork = core->LoadNetwork(cnnNetwork, targetDevice, configuration);
 }
 
