@@ -105,7 +105,9 @@ layout loop_inst::calc_output_layout(loop_node const & node) {
     // body program should be built here to calculate body input layout
     // from outputs of loop's dependency and calculate loop output layout
     // from the outputs of body program
-    node.build_body_program();
+    if (!node.get_body_program()) {
+        node.build_body_program();
+    }
 
     // type checks
     const primitive_id& num_iteration_id = node.get_num_iteration_id();
@@ -132,7 +134,7 @@ layout loop_inst::calc_output_layout(loop_node const & node) {
     // can internal_id and external_id have the same id ?
 
     // finds internal output
-    const auto& output_mapping = output_primitive_map.begin()->second.get();
+    const auto& output_mapping = output_primitive_map.front();
     const auto& body_outputs = node.get_body_program()->get_outputs();
     const primitive_id& output_internal_id = output_mapping.internal_id;
     auto target = std::find_if(body_outputs.begin(), body_outputs.end(), [&](const cldnn::program_node * output) {
@@ -186,10 +188,11 @@ std::string loop_inst::to_string(const loop_node & node) {
 
 loop_inst::typed_primitive_inst(network_impl & network, loop_node const & node)
     : parent(network, node),
-      body_network(node.get_program().get_engine().allocate_network(
-                                                     *node.get_body_program(),
-                                                     network.get_stream_id(),
-                                                     true)) {
+      body_network(node.get_program()
+        .get_engine()
+        .allocate_network(*node.get_body_program(),
+                          network.get_stream_id(),
+                          true)) {
     // TODO(cldnn loop): move validation code in calc_output_layout to here
     if (!check_if_axis_is_set_properly(node))
         CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");

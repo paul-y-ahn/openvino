@@ -131,10 +131,11 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 continue;
             }
             memory_impl& memory = instance.input_memory(memory_num);
-            if (input_primitive_map.count(input_external_id) == 0) {
+            const auto* input_pm_ptr = node.find_primitive_mapping(input_external_id, input_primitive_map);
+            if (input_pm_ptr == nullptr) {
                 CLDNN_ERROR_MESSAGE(instance.id(), "loop primitive_map is incomplete");
             }
-            const auto& input_pm = input_primitive_map.at(input_external_id).get();
+            const auto& input_pm = *input_pm_ptr;
 
             // handle memory
             if (input_pm.axis >= 0) { // checks if it's a memory to iterate through
@@ -358,7 +359,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 iter_mem.offset += iter_mem.iteration_elements;
             }
 
-            // TODO(cldnn loop): remove print_body_input(body_network);
             body_network->execute(events);
 
             //copy output
