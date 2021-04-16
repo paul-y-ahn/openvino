@@ -32,12 +32,12 @@ template<>
 struct typed_program_node<loop> : public typed_program_node_base<loop> {
 private:
     using parent = typed_program_node_base<loop>;
-    using primitive_map_cref_t = std::map<primitive_id, std::reference_wrapper<const loop::primitive_mapping>>;
     using primitive_map_t = std::vector<loop::primitive_mapping>;
+    topology body_topology;
     topology_impl& body;
 
-    primitive_map_cref_t input_primitive_map;
-    primitive_map_cref_t output_primitive_map;
+    primitive_map_t input_primitive_map;
+    primitive_map_t output_primitive_map;
     bool use_current_iteration;
     bool use_execution_condition;
     bool output_need_concat;
@@ -60,12 +60,13 @@ private:
 public:
     typed_program_node(std::shared_ptr<primitive> prim, program_impl& prog)
         : parent(prim, prog),
-          body(*this->get_primitive()->body.get()),
+          body_topology(this->get_primitive()->body),
+          body(*body_topology.get()),
           use_current_iteration(!this->get_primitive()->current_iteration_id.empty()),
           use_execution_condition(!this->get_primitive()->execution_condition_id.empty()) {
             input_primitive_map = this->get_primitive_mapping(this->get_primitive()->primitive_map, loop::INPUT);
             output_primitive_map = this->get_primitive_mapping(this->get_primitive()->primitive_map, loop::OUTPUT);
-            output_need_concat = output_primitive_map.begin()->second.get().axis >= 0;
+            output_need_concat = output_primitive_map.front().axis >= 0;
         }
 
     mutable int iteration_axis;
@@ -83,15 +84,14 @@ public:
     bool need_output_concat() const { return output_need_concat; }
 
     static const loop::primitive_mapping* find_primitive_mapping(const primitive_id& external_id,
-        const primitive_map_t& primitive_map,
-        const loop::primitive_type type) {
-        auto input_mapping = std::find_if(primitive_map.begin(),
-                                       primitive_map.end(),
-                                       [&](const loop::primitive_mapping& pm) {
-                                           return (pm.type == type) && pm.external_id == external_id; });
-        if (input_mapping == primitive_map.end())
+        const primitive_map_t& primitive_map) {
+        auto mapping = std::find_if(primitive_map.begin(), primitive_map.end(),
+            [&](const loop::primitive_mapping& pm) {
+                return pm.external_id == external_id;
+            });
+        if (mapping == primitive_map.end())
             return nullptr;
-        return &(*input_mapping);
+        return &(*mapping);
     }
 
     static size_t convert_to_raw_axis(const int axis, const int ndim) {
@@ -120,16 +120,16 @@ public:
         return calculated_layout;
     }
 
-    const primitive_map_cref_t& get_input_primitive_map() const { return input_primitive_map; }
-    const primitive_map_cref_t& get_output_primitive_map() const { return output_primitive_map; }
+    const primitive_map_t& get_input_primitive_map() const { return input_primitive_map; }
+    const primitive_map_t& get_output_primitive_map() const { return output_primitive_map; }
     const primitive_map_t& get_primitive_map() const { return get_primitive()->primitive_map;}
     const std::vector<cldnn::loop::backedge_mapping>& get_back_edges() const { return get_primitive()->back_edges;}
 
-    static primitive_map_cref_t get_primitive_mapping(const primitive_map_t& primitive_map, loop::primitive_type type) {
-        primitive_map_cref_t ret;
+    static primitive_map_t get_primitive_mapping(const primitive_map_t& primitive_map, loop::primitive_type type) {
+        primitive_map_t ret;
         for (const auto& p : primitive_map) {
             if (p.type == type) {
-                ret.emplace(p.external_id, std::cref(p));
+                ret.push_back(p);
             }
         }
         return ret;
@@ -184,10 +184,10 @@ public:
             if (id == trip_count_id || id == initial_execution || id == num_iteration) {
                 continue;
             }
-            assert(input_primitive_map.count(id));
-            const loop::primitive_mapping& input_rule = input_primitive_map.at(id).get();
-            layout calculated_layout = calc_body_input_layout(input_rule);
-            const primitive_id& internal_input_id = input_rule.internal_id;
+            const loop::primitive_mapping* input_rule = find_primitive_mapping(id, input_primitive_map);
+            assert(input_rule != nullptr);
+            layout calculated_layout = calc_body_input_layout(*input_rule);
+            const primitive_id& internal_input_id = input_rule->internal_id;
 
             // add inputs for body network if not exist
             if (body.get_primitives().count(internal_input_id) == 0) {
@@ -199,11 +199,11 @@ public:
 
         // setup internal output
         std::set<primitive_id> output_names;
-        const loop::primitive_mapping& output_mapping = output_primitive_map.begin()->second.get();
+        output_names.insert(output_primitive_map.begin()->internal_id);
         output_is_backedge = false;
         const auto& back_edges = get_primitive()->back_edges;
         for (const auto& out : back_edges) {
-            if (out.from == output_mapping.internal_id) {
+            if (out.from == output_primitive_map.front().internal_id) {
                 output_is_backedge = true;
                 break;
             }
@@ -226,19 +226,17 @@ public:
                 }
             }
             const auto& input_mapping = std::find_if(input_primitive_map.begin(), input_primitive_map.end(),
-                [&](const std::pair<cldnn::primitive_id, std::reference_wrapper<const cldnn::loop::primitive_mapping>>& pm) {
-                    return pm.second.get().internal_id == back_edge.to;
-            });
+                [&](const loop::primitive_mapping& pm) {
+                    return pm.internal_id == back_edge.to;
+                });
             assert(input_mapping != input_primitive_map.end());
 
-            setup_internal_mutabledata_node(body_output_id, calc_body_input_layout(input_mapping->second), { back_edge.from });
+            setup_internal_mutabledata_node(body_output_id, calc_body_input_layout(*input_mapping), { back_edge.from });
             output_names.insert(body_output_id);
         }
 
         auto opts = get_program().get_options();
-        std::vector<primitive_id> output_names_vec;
-        for (auto name : output_names)
-            output_names_vec.push_back(name);
+        std::vector<primitive_id> output_names_vec(output_names.begin(), output_names.end());
         opts.set_option(build_option::outputs(output_names_vec));
         body_program = get_program().get_engine().build_program(body, opts, true);
     }
