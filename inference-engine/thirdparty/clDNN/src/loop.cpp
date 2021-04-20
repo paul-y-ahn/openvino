@@ -33,8 +33,6 @@ primitive_type_id loop::type_id() {
     return &instance;
 }
 
-static int32_t MAX_ITERATION = 128;
-
 static bool check_if_axis_is_set_properly(loop_node const & node) {
     // check if all iteration are performed on the same axis
     const auto& primitive_map = node.get_primitive()->primitive_map;
@@ -151,7 +149,7 @@ layout loop_inst::calc_output_layout(loop_node const & node) {
         const auto shape = loop_output_layout.size.sizes(loop_output_layout.format);
         const size_t ndim = shape.size();
         const size_t raw_axis = node.convert_to_raw_axis(axis_to_iterate_throgh, ndim);
-        loop_output_layout.size.raw[raw_axis] = MAX_ITERATION;
+        loop_output_layout.size.raw[raw_axis] = node.get_max_iteration();
     }
     return loop_output_layout;
 }
@@ -192,7 +190,7 @@ loop_inst::typed_primitive_inst(network_impl & network, loop_node const & node)
         .get_engine()
         .allocate_network(*node.get_body_program(),
                           network.get_stream_id(),
-                          true)) {
+                          false)) {
     // TODO(cldnn loop): move validation code in calc_output_layout to here
     if (!check_if_axis_is_set_properly(node))
         CLDNN_ERROR_MESSAGE(node.id(), "axis is not set properly");

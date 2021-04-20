@@ -58,18 +58,24 @@ private:
     }
 
 public:
-    typed_program_node(std::shared_ptr<primitive> prim, program_impl& prog)
-        : parent(prim, prog),
-          body_topology(this->get_primitive()->body),
-          body(*body_topology.get()),
-          use_current_iteration(!this->get_primitive()->current_iteration_id.empty()),
-          use_execution_condition(!this->get_primitive()->execution_condition_id.empty()) {
+    typed_program_node(std::shared_ptr<primitive> prim, program_impl& prog) :
+        parent(prim, prog),
+        body_topology(this->get_primitive()->body),
+        body(*body_topology.get()),
+        use_current_iteration(!this->get_primitive()->current_iteration_id.empty()),
+        use_execution_condition(!this->get_primitive()->execution_condition_id.empty()),
+        max_iteration(this->get_primitive()->max_iteration < 0?
+                this->get_primitive()->DEFAULT_MAX_ITERATION :
+                this->get_primitive()->max_iteration) {
             input_primitive_map = this->get_primitive_mapping(this->get_primitive()->primitive_map, loop::INPUT);
             output_primitive_map = this->get_primitive_mapping(this->get_primitive()->primitive_map, loop::OUTPUT);
             output_need_concat = output_primitive_map.front().axis >= 0;
         }
 
     mutable int iteration_axis;
+
+    int32_t max_iteration;
+    int32_t get_max_iteration() const { return max_iteration; }
 
     program_impl::ptr get_body_program() const {
         return body_program;
@@ -83,15 +89,16 @@ public:
     bool is_execution_condition_used() const { return use_execution_condition; }
     bool need_output_concat() const { return output_need_concat; }
 
-    static const loop::primitive_mapping* find_primitive_mapping(const primitive_id& external_id,
-        const primitive_map_t& primitive_map) {
-        auto mapping = std::find_if(primitive_map.begin(), primitive_map.end(),
-            [&](const loop::primitive_mapping& pm) {
-                return pm.external_id == external_id;
-            });
-        if (mapping == primitive_map.end())
-            return nullptr;
-        return &(*mapping);
+    static std::vector<const loop::primitive_mapping*> find_primitive_mappings(
+            const primitive_id& external_id,
+            const primitive_map_t& primitive_map) {
+        std::vector<const loop::primitive_mapping*> ret;
+        for (auto it = primitive_map.begin(); it != primitive_map.end(); ++it) {
+            if (it->external_id == external_id) {
+                ret.push_back(&(*it));
+            }
+        }
+        return ret;
     }
 
     static size_t convert_to_raw_axis(const int axis, const int ndim) {
@@ -184,16 +191,18 @@ public:
             if (id == trip_count_id || id == initial_execution || id == num_iteration) {
                 continue;
             }
-            const loop::primitive_mapping* input_rule = find_primitive_mapping(id, input_primitive_map);
-            assert(input_rule != nullptr);
-            layout calculated_layout = calc_body_input_layout(*input_rule);
-            const primitive_id& internal_input_id = input_rule->internal_id;
+            auto input_rules = find_primitive_mappings(id, input_primitive_map);
+            assert(input_rules.size() > 0);
+            for (const cldnn::loop::primitive_mapping * input_rule : input_rules) {
+                layout calculated_layout = calc_body_input_layout(*input_rule);
+                const primitive_id& internal_input_id = input_rule->internal_id;
 
-            // add inputs for body network if not exist
-            if (body.get_primitives().count(internal_input_id) == 0) {
-                body.add(std::make_shared<input_layout>(internal_input_id, calculated_layout));
-            } else {
-                body.change_input_layout(internal_input_id, calculated_layout);
+                // add inputs for body network if not exist
+                if (body.get_primitives().count(internal_input_id) == 0) {
+                    body.add(std::make_shared<input_layout>(internal_input_id, calculated_layout));
+                } else {
+                    body.change_input_layout(internal_input_id, calculated_layout);
+                }
             }
         }
 

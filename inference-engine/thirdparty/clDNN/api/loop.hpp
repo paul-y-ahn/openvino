@@ -168,6 +168,7 @@ struct loop : public primitive_base<loop> {
         const primitive_id& num_iteration_id,
         const std::vector<primitive_mapping>& primitive_map,
         const std::vector<backedge_mapping>& back_edges,
+        int32_t max_iteration = -1,
         const primitive_id& current_iteration_id = primitive_id(),
         const primitive_id& execution_condition_id = primitive_id(),
         const padding& output_padding = padding())
@@ -179,7 +180,8 @@ struct loop : public primitive_base<loop> {
               current_iteration_id(current_iteration_id),
               execution_condition_id(execution_condition_id),
               primitive_map(primitive_map),
-              back_edges(back_edges)
+              back_edges(back_edges),
+              max_iteration(max_iteration)
               {}
 
     /// @brief Topology to be recurrently executed.
@@ -205,6 +207,10 @@ struct loop : public primitive_base<loop> {
 
     /// @brief Rules to transfer data from body outputs at one iteration to body input at the next iteration.
     std::vector<backedge_mapping> back_edges;
+
+    int32_t max_iteration;
+
+    static const int32_t DEFAULT_MAX_ITERATION = 128;
 
 protected:
     std::vector<std::reference_wrapper<const primitive_id>> get_dependencies() const override {
