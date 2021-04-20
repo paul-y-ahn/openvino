@@ -147,8 +147,16 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
         }
     }
 
-    const cldnn::loop loopPrimitive(layerName, inputPrimitives, body_topology,
-        trip_count_id, execution_condition_id, num_iteration_id, primitive_map, back_edges);
+    const cldnn::loop loopPrimitive(
+        layerName,              /* layer name of this primitive (output id) */
+        inputPrimitives,        /* inputs of this layer */
+        body_topology,          /* body network */
+        trip_count_id,          /* trip_count data in outer network, always same as num_iterations in TI */
+        execution_condition_id, /* initial_execution_condition data in outer network, always true in TI */
+        num_iteration_id,       /* actual number of iteration data in body network */
+        primitive_map,          /* primitive mapping connecting outer network and innter network */
+        back_edges,             /* back edge mapping */
+        num_iterations);        /* max iteration */
 
     p.AddPrimitive(loopPrimitive);
     p.AddPrimitiveToProfiler(op);
