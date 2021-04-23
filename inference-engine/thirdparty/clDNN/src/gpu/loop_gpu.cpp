@@ -266,7 +266,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         memory_impl& initial_execution_mem = outer_network.get_primitive(initial_execution_id)->output_memory();
         int64_t execution_condition = read_int(initial_execution_mem);
 
-        // shortcut of current_iteration memory in body network
+        // shortcut of current_iteration memory in body network (slice of input)
         memory_impl* current_iteration_mem = nullptr;
         if (node.is_current_iteration_used()) {
             const primitive_id& current_iteration_id = node.get_current_iteration_id();
@@ -277,20 +277,23 @@ struct loop_gpu : typed_primitive_impl<loop> {
         // shortcut of execution_condition memory in body network
         memory_impl* execution_condition_mem = nullptr;
         if (node.is_execution_condition_used()) {
-            const primitive_id& execution_condition_id = node.get_execution_condition_id();
-            execution_condition_mem = &body_network->get_primitive(execution_condition_id)->output_memory();
+            const primitive_id& condition_id = node.get_condition_id();
+            execution_condition_mem = &body_network->get_primitive(condition_id)->output_memory();
         }
 
         std::vector<backedge_memory_binding> backedge_mem;
         std::vector<input_memory_binding> iteration_mem;
 
+        // TODO: move out of execute_impl
         process_internal_memory(instance, backedge_mem, iteration_mem);
 
+        // TODO: move out of execute_impl
         // memory read-write optimization
         // it makes output nodes write directly to input memory
         const bool enable_memory_rw_opt = true;
         if (enable_memory_rw_opt) {
             for (auto& backedge : backedge_mem) {
+                // check input buffer != output buffer
                 if (!check_if_can_be_optimized(backedge, instance)) {
                     continue;
                 }
