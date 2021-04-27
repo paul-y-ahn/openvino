@@ -378,4 +378,12 @@ public:
     void run(program_impl& p) override;
 };
 
+class update_loop_primitive_map : public base_pass {
+public:
+    update_loop_primitive_map() : base_pass("update_loop_primitive_map") {}
+
+private:
+    void run(program_impl& p) override;
+};
+
 }  // namespace cldnn

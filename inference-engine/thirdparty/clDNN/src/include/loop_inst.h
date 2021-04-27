@@ -37,6 +37,7 @@ private:
 
     primitive_map_t input_primitive_map;
     primitive_map_t output_primitive_map;
+    std::vector<cldnn::loop::backedge_mapping> back_edges;
     bool use_current_iteration;
     bool use_execution_condition;
     bool output_need_concat;
@@ -61,6 +62,7 @@ public:
         parent(prim, prog),
         body_topology(this->get_primitive()->body),
         body(*body_topology.get()),
+        back_edges(this->get_primitive()->back_edges),
         use_current_iteration(!this->get_primitive()->current_iteration_id.empty()),
         use_execution_condition(!this->get_primitive()->condition_id.empty()),
         max_iteration(this->get_primitive()->max_iteration < 0?
@@ -123,22 +125,47 @@ public:
     const primitive_map_t& get_input_primitive_map() const { return input_primitive_map; }
     const primitive_map_t& get_output_primitive_map() const { return output_primitive_map; }
 
-    void update_primitive_map_external_id(const primitive_id& prevID, const primitive_id& newID) {
-        for (auto& pm : input_primitive_map) {
-            if (pm.external_id == prevID) {
-                pm.external_id = newID;
-                return;
+    void update_primitive_map(const primitive_id& prevID, const primitive_id& newID, bool external_id = true) {
+        if (external_id) {
+            for (auto& pm : input_primitive_map) {
+                if (pm.external_id == prevID) {
+                    pm.external_id = newID;
+                    return;
+                }
             }
-        }
-        for (auto& pm : output_primitive_map) {
-            if (pm.external_id == prevID) {
-                pm.external_id = newID;
-                return;
+            for (auto& pm : output_primitive_map) {
+                if (pm.external_id == prevID) {
+                    pm.external_id = newID;
+                    return;
+                }
+            }
+        } else {
+            for (auto& pm : input_primitive_map) {
+                if (pm.internal_id == prevID) {
+                    pm.internal_id = newID;
+                    return;
+                }
+            }
+            for (auto& pm : output_primitive_map) {
+                if (pm.internal_id == prevID) {
+                    pm.internal_id = newID;
+                    return;
+                }
+            }
+            for (auto& back_edge : back_edges) {
+                if (back_edge.from == prevID) {
+                    back_edge.from = newID;
+                    return;
+                }
+                if (back_edge.to == prevID) {
+                    back_edge.to = newID;
+                    return;
+                }
             }
         }
     }
 
-    const std::vector<cldnn::loop::backedge_mapping>& get_back_edges() const { return get_primitive()->back_edges;}
+    const std::vector<cldnn::loop::backedge_mapping>& get_back_edges() const { return back_edges;}
 
     static primitive_map_t get_primitive_mapping(const primitive_map_t& primitive_map, loop::primitive_type type) {
         primitive_map_t ret;
