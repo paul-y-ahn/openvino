@@ -483,6 +483,8 @@ void program_impl::post_optimize_graph(bool is_internal) {
 
     if (options.get<build_option_type::optimize_data>()->enabled())
         apply_opt_pass<remove_redundant_reorders>(lo, false, true, true);  // pass to remove output reorders while all others graph optimizations were done
+
+    apply_opt_pass<update_loop_primitive_map>();
 }
 
 // mark if the node is constant assuming that all dependencies are marked properly
@@ -871,7 +873,7 @@ bool program_impl::extract_and_remove(program_node& node) {
         return false;
 
     static int a = 1;
-    if (node.users.size() > 1 && node.users.front()->id().rfind("concat") == 0) {
+    if (node.id() == "tensoriterator:TensorIterator_63.1") {
         ++a;
     }
 
@@ -898,12 +900,12 @@ bool program_impl::extract_and_remove(program_node& node) {
     if (node.users.size() == 1) {
         if (node.users.front()->is_type<loop>()) {
             loop_node& loop = *node.users.front();
-            loop.update_primitive_map_external_id(node.id(), input.id());
+            loop.update_primitive_map(node.id(), input.id());
         }
         if (node.dependencies.front()->is_type<loop>()) {
             loop_node& loop = *node.dependencies.front();
             const auto node_user = node.users.front();
-            loop.update_primitive_map_external_id(node.id(), node_user->id());
+            loop.update_primitive_map(node.id(), node_user->id());
         }
     }
 
