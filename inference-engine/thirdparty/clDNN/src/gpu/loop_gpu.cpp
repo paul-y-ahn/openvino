@@ -45,6 +45,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         memory_impl::ptr from_mem;
         memory_impl::ptr to_mem;
         int iteration_elements = 0;
+        int stride = 0;
         int offset = 0;
     };
 
@@ -118,6 +119,9 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 memory_binding.from_mem = croped_mem;
                 memory_binding.to_mem = to_mem;
                 memory_binding.iteration_elements = linear_size;
+                memory_binding.stride = linear_size * primitive_map.stride;
+                const int start = primitive_map.start < 0? node.get_max_iteration() - 1: primitive_map.start;
+                memory_binding.offset = linear_size * start;
                 output_iteration_mem.push_back(memory_binding);
             }
         }
@@ -156,6 +160,9 @@ struct loop_gpu : typed_primitive_impl<loop> {
                     memory_binding.from_mem = (memory_impl::ptr)&memory;
                     memory_binding.to_mem = croped_mem;
                     memory_binding.iteration_elements = linear_size;
+                    memory_binding.stride = linear_size * input_pm.stride;
+                    const int start = input_pm.start < 0? node.get_max_iteration() - 1: input_pm.start;
+                    memory_binding.offset = linear_size * start;
                     iteration_mem.push_back(memory_binding);
                     body_network->set_input_data(input_pm.internal_id, *croped_mem.get());
                 } else { // "normal" mem
@@ -368,16 +375,16 @@ struct loop_gpu : typed_primitive_impl<loop> {
             // copy input mem
             for (auto& iter_mem : input_iteration_mem) {
                 copy_buffer(*iter_mem.from_mem, *iter_mem.to_mem, iter_mem.iteration_elements, iter_mem.offset);
-                iter_mem.offset += iter_mem.iteration_elements;
+                iter_mem.offset += iter_mem.stride;
             }
 
             body_network->execute(events);
             body_network->reset_execution();
 
-            // copy input mem
+            // copy output mem
             for (auto& iter_mem : output_iteration_mem) {
                 copy_buffer(*iter_mem.from_mem, *iter_mem.to_mem, iter_mem.iteration_elements, 0, iter_mem.offset);
-                iter_mem.offset += iter_mem.iteration_elements;
+                iter_mem.offset += iter_mem.stride;
             }
 
             // update index & execution condition for the next iteration
