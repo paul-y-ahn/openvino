@@ -130,36 +130,30 @@ public:
             for (auto& pm : input_primitive_map) {
                 if (pm.external_id == prevID) {
                     pm.external_id = newID;
-                    return;
                 }
             }
             for (auto& pm : output_primitive_map) {
                 if (pm.external_id == prevID) {
                     pm.external_id = newID;
-                    return;
                 }
             }
         } else {
             for (auto& pm : input_primitive_map) {
                 if (pm.internal_id == prevID) {
                     pm.internal_id = newID;
-                    return;
                 }
             }
             for (auto& pm : output_primitive_map) {
                 if (pm.internal_id == prevID) {
                     pm.internal_id = newID;
-                    return;
                 }
             }
             for (auto& back_edge : back_edges) {
                 if (back_edge.from == prevID) {
                     back_edge.from = newID;
-                    return;
                 }
                 if (back_edge.to == prevID) {
                     back_edge.to = newID;
-                    return;
                 }
             }
         }
@@ -226,11 +220,10 @@ public:
             if (id == trip_count_id || id == initial_execution || id == num_iteration) {
                 continue;
             }
-            auto input_rules = find_primitive_mappings(id, input_primitive_map);
-            assert(input_rules.size() > 0);
-            for (const cldnn::loop::primitive_mapping * input_rule : input_rules) {
-                layout calculated_layout = calc_body_input_layout(*input_rule);
-                const primitive_id& internal_input_id = input_rule->internal_id;
+
+            for (const auto& pm : input_primitive_map) {
+                layout calculated_layout = calc_body_input_layout(pm);
+                const primitive_id& internal_input_id = pm.internal_id;
 
                 // add inputs for body network if not exist
                 if (body.get_primitives().count(internal_input_id) == 0) {
@@ -299,12 +292,45 @@ class typed_primitive_inst<loop> : public typed_primitive_inst_base<loop> {
     using parent = typed_primitive_inst_base<loop>;
 
 public:
+    struct backedge_memory_binding {
+        memory_impl* from_mem;
+        memory_impl* to_mem;
+        memory_impl::ptr backup;
+        primitive_id from_id;
+        primitive_id to_id;
+        bool is_optimized;
+    };
+
+    struct external_memory_binding {
+        primitive_id id;
+        memory_impl::ptr from_mem;
+        memory_impl::ptr to_mem;
+        int iteration_elements = 0;
+        int stride = 0;
+        int offset = 0;
+        int initial_offset = 0;
+    };
+
     static layout calc_output_layout(const loop_node& node);
     static std::string to_string(const loop_node& node);
+    bool memroy_set;
+    std::vector<backedge_memory_binding> backedge_mem;
+    std::vector<external_memory_binding> input_iteration_mem;
+    std::vector<external_memory_binding> output_iteration_mem;
+
+    void reset_memory_binding_offset() {
+        for (auto& binding : input_iteration_mem) {
+            binding.offset = binding.initial_offset;
+        }
+        for (auto& binding : output_iteration_mem) {
+            binding.offset = binding.initial_offset;
+        }
+    }
 
 public:
     typed_primitive_inst(network_impl& network, const loop_node& node);
     network_impl::ptr get_body_network() const { return body_network; }
+
 private:
     network_impl::ptr body_network;
 };
