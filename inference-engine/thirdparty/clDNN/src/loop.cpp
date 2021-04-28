@@ -25,10 +25,6 @@
 #include <exception>
 #include <algorithm>
 
-// TODO(cldnn loop): clDNN/src/loop.cpp calc_output_layout
-//   - [x] loop_inst::calc_output_layout
-//   - [x] loop_inst::to_string
-//   - [x] loop_inst::typed_primitive_inst
 namespace cldnn {
 primitive_type_id loop::type_id() {
     static primitive_type_base<loop> instance;
@@ -240,6 +236,7 @@ static void validate_primitive_map(loop_node const & node) {
 
 loop_inst::typed_primitive_inst(network_impl & network, loop_node const & node)
     : parent(network, node),
+      memroy_set(false),
       body_network(node.get_program()
         .get_engine()
         .allocate_network(*node.get_body_program(),

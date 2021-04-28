@@ -31,38 +31,23 @@ struct loop_gpu : typed_primitive_impl<loop> {
 
     explicit loop_gpu(const loop_node& node) : node(node) {}
 
-    struct backedge_memory_binding {
-        memory_impl* from_mem;
-        memory_impl* to_mem;
-        memory_impl::ptr backup;
-        primitive_id from_id;
-        primitive_id to_id;
-        bool is_optimized;
-    };
-
-    struct external_memory_binding {
-        primitive_id id;
-        memory_impl::ptr from_mem;
-        memory_impl::ptr to_mem;
-        int iteration_elements = 0;
-        int stride = 0;
-        int offset = 0;
-    };
-
     // helpers
-    static bool check_if_can_be_optimized(backedge_memory_binding& backedge, const loop_inst& instance) {
+    static bool check_if_can_be_optimized(const loop_inst::backedge_memory_binding& backedge, const loop_inst& instance) {
         // cannot optimized if input memory == output memory
-        const auto& output_prim = instance.get_body_network()->get_primitive(backedge.from_id);
-        if (output_prim->dependencies().size() == 1) {
+        const auto from = instance.get_body_network()->get_primitive(backedge.from_id);
+        const auto to = instance.get_body_network()->get_primitive(backedge.to_id);
+        if (from->output_memory().get_layout() != to->output_memory().get_layout()) {
             return false;
         }
-        // can optimize if backedge.to_mem.data != backedge.from_mem.data
-        const auto& node_feeding_backedge = output_prim->dependencies().front();
-        for (auto node_dep : node_feeding_backedge->dependencies()) {
-            mem_lock<void> output_mem{ node_dep->output_memory() };
+
+        // cannot be optimized if dependency has the same memory as backedge.to_mem
+        {
             mem_lock<void> input_mem{ *backedge.to_mem };
-            if (output_mem.data() == input_mem.data()) {
-                return false;
+            for (const auto dep : from->dependencies()) {
+                mem_lock<void> output_mem{ from->output_memory() };
+                if (output_mem.data() == input_mem.data()) {
+                    return false;
+                }
             }
         }
         return true;
@@ -91,12 +76,13 @@ struct loop_gpu : typed_primitive_impl<loop> {
         prim->set_output_memory(memory);
     }
 
-    void set_output_memory(loop_inst& instance, std::vector<external_memory_binding>& output_iteration_mem) {
+    void set_output_memory(loop_inst& instance) {
         //  - if axis = -1,
         //      from_mem = to_mem
         //  - if axis >= 0
         //      from_mem != to_mem
         //      iteration_elements(stride), offset => should be set
+        auto& output_iteration_mem = instance.output_iteration_mem;
         auto body_network = instance.get_body_network();
         const auto& output_primitive_map = node.get_output_primitive_map();
         for (const auto& primitive_map : output_primitive_map) {
@@ -114,7 +100,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 const int linear_size = static_cast<int>(croped_layout.get_linear_size());
                 set_primitive_memory(*body_network, internal_id, *croped_mem);
 
-                external_memory_binding memory_binding;
+                loop_inst::external_memory_binding memory_binding;
                 memory_binding.id = primitive_map.internal_id;
                 memory_binding.from_mem = croped_mem;
                 memory_binding.to_mem = to_mem;
@@ -122,14 +108,15 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 memory_binding.stride = linear_size * primitive_map.stride;
                 const int start = primitive_map.start < 0? node.get_max_iteration() - 1: primitive_map.start;
                 memory_binding.offset = linear_size * start;
+                memory_binding.initial_offset = memory_binding.offset;
                 output_iteration_mem.push_back(memory_binding);
             }
         }
     }
 
-    void set_input_memory(loop_inst& instance,
-                          std::vector<backedge_memory_binding>& backedge_mem,
-                          std::vector<external_memory_binding>& iteration_mem) {
+    void set_input_memory(loop_inst& instance) {
+        auto& backedge_mem = instance.backedge_mem;
+        auto& iteration_mem = instance.input_iteration_mem;
         auto body_network = instance.get_body_network();
         const auto& input_primitive_map = node.get_input_primitive_map();
 
@@ -155,7 +142,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
                     memory_impl::ptr croped_mem = instance.get_network().get_engine().allocate_memory(croped_layout, 0);
                     croped_input_mem_pool[input_pm.internal_id] = croped_mem;
                     const int linear_size = static_cast<int>(croped_layout.get_linear_size());
-                    external_memory_binding memory_binding;
+                    loop_inst::external_memory_binding memory_binding;
                     memory_binding.id = input_pm.internal_id;
                     memory_binding.from_mem = (memory_impl::ptr)&memory;
                     memory_binding.to_mem = croped_mem;
@@ -163,6 +150,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
                     memory_binding.stride = linear_size * input_pm.stride;
                     const int start = input_pm.start < 0? node.get_max_iteration() - 1: input_pm.start;
                     memory_binding.offset = linear_size * start;
+                    memory_binding.initial_offset = memory_binding.offset;
                     iteration_mem.push_back(memory_binding);
                     body_network->set_input_data(input_pm.internal_id, *croped_mem.get());
                 } else { // "normal" mem
@@ -183,7 +171,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
                         if (body_output->id() != back_edge.from) {
                             continue;
                         }
-                        backedge_memory_binding mem_bind;
+                        loop_inst::backedge_memory_binding mem_bind;
                         mem_bind.from_mem = &body_network->get_primitive(back_edge.from)->output_memory();
                         mem_bind.to_mem = &body_network->get_primitive(back_edge.to)->output_memory();
                         mem_bind.from_id = back_edge.from;
@@ -340,21 +328,11 @@ struct loop_gpu : typed_primitive_impl<loop> {
             execution_condition_mem = &body_network->get_primitive(condition_id)->output_memory();
         }
 
-        std::vector<backedge_memory_binding> backedge_mem;
-        std::vector<external_memory_binding> input_iteration_mem;
-        std::vector<external_memory_binding> output_iteration_mem;
-
-        // TODO: move out of execute_impl
         // output memory must be set before input_memory to set backedge memory properly
-        set_output_memory(instance, output_iteration_mem);
-        set_input_memory(instance, backedge_mem, input_iteration_mem);
-
-        // TODO: move out of execute_impl
-        // memory read-write optimization
-        // it makes output nodes write directly to input memory
-        const bool enable_memory_rw_opt = true;
-        if (enable_memory_rw_opt) {
-            for (auto& backedge : backedge_mem) {
+        if (!instance.memroy_set) {
+            set_output_memory(instance);
+            set_input_memory(instance);
+            for (auto& backedge : instance.backedge_mem) {
                 // check input buffer != output buffer
                 if (!check_if_can_be_optimized(backedge, instance)) {
                     continue;
@@ -362,6 +340,9 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 body_network->set_input_data(backedge.to_id, *backedge.from_mem);
                 backedge.is_optimized = true;
             }
+            instance.memroy_set = true;
+        } else {
+            instance.reset_memory_binding_offset();
         }
 
         int64_t current_iteration = 0;
@@ -373,7 +354,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         const auto output_ids = body_network->get_output_ids();
         while (current_iteration < trip_count && execution_condition) {
             // copy input mem
-            for (auto& iter_mem : input_iteration_mem) {
+            for (auto& iter_mem : instance.input_iteration_mem) {
                 copy_buffer(*iter_mem.from_mem, *iter_mem.to_mem, iter_mem.iteration_elements, iter_mem.offset);
                 iter_mem.offset += iter_mem.stride;
             }
@@ -382,7 +363,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
             body_network->reset_execution();
 
             // copy output mem
-            for (auto& iter_mem : output_iteration_mem) {
+            for (auto& iter_mem : instance.output_iteration_mem) {
                 copy_buffer(*iter_mem.from_mem, *iter_mem.to_mem, iter_mem.iteration_elements, 0, iter_mem.offset);
                 iter_mem.offset += iter_mem.stride;
             }
@@ -400,7 +381,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
             }
 
             // copy back_edges
-            for (auto edge_mem_bind : backedge_mem) {
+            for (auto edge_mem_bind : instance.backedge_mem) {
                 if (!edge_mem_bind.is_optimized) {
                     copy_entire_buffer(*edge_mem_bind.from_mem, *edge_mem_bind.to_mem);
                 }
