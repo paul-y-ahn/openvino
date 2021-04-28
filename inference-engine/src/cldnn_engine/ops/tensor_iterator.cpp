@@ -14,6 +14,7 @@
 
 #include "api/loop.hpp"
 #include "api/mutable_data.hpp"
+#include "api/reorder.hpp"
 
 #include <vector>
 #include <algorithm>
@@ -67,13 +68,22 @@ static cldnn::primitive_id GetInputPrimitiveID(const std::shared_ptr<ngraph::Nod
     return layer_type_name_ID(op2->inputs().at(index).get_source_output().get_node());
 }
 
+static void UpdateBackedge(std::vector<cldnn::loop::backedge_mapping>& back_edges,
+        const cldnn::primitive_id& old_primitive_id, const cldnn::primitive_id& new_primitive_id) {
+    for (auto& back_edge : back_edges) {
+        if (back_edge.from == old_primitive_id) {
+            back_edge.from = new_primitive_id;
+        }
+    }
+}
+
 void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &op) {
     // loop can takes multiple inputs, no p.ValidateInputs()
     auto inputPrimitives = p.GetInputPrimitiveIDs(op);
 
     // set body topology
     InferenceEngine::CNNNetwork body_network(op->get_body());
-    Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), false); //TODO:
+    Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), false);
     auto body_topology = *body_program.GetTopology();
 
     // setup primitive_map and back_edges
@@ -87,8 +97,9 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
 
     for (const auto& input_mapping : input_mappings) {
         const cldnn::primitive_id& external_id = inputPrimitives.at(input_mapping->m_input_index);
-        const auto& body_input = body_inputs.at(input_mapping->m_body_parameter_index);
-        cldnn::primitive_id internal_id = GetPrimitiveID(body_program, body_input);
+        auto& body_input = body_inputs.at(input_mapping->m_body_parameter_index);
+
+        cldnn::primitive_id internal_id = layer_type_name_ID(body_input);
         if (const auto& sliceInfo =
             std::dynamic_pointer_cast<TensorIterator::SliceInputDescription>(input_mapping)) {
             // input with iteration axis
@@ -138,8 +149,13 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
         p.AddInnerPrimitiveToProfiler(num_iteration_id, layerName, op);
     }
 
+    const auto& ti_outputs = op->outputs();
     for (const auto& output_mapping : output_mappings) {
         const int output_idx = output_mapping->m_output_index;
+
+        // Add additional mutable_data for multiple outputs
+        // primitive ID should be <TI primitive ID>.<output_idx> if output_idx > 0
+        // other wise primitive ID should be equals to TI primitive ID
         const std::string layerNameWithIndex = layerName + "." + std::to_string(output_idx);
         std::string external_id;
         if (output_idx > 0) {
@@ -154,7 +170,18 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
             external_id = layerName;
         }
         const auto& body_output = body_outputs.at(output_mapping->m_body_value_index);
-        const cldnn::primitive_id internal_id = layer_type_name_ID(body_output);
+        cldnn::primitive_id internal_id = layer_type_name_ID(body_output);
+
+        // add additional reorder in case TI output type != body output type
+        const auto& ti_output_type = ti_outputs.at(output_idx).get_element_type();
+        cldnn::primitive_id new_internal_id = internal_id + "_reorder";
+        const auto new_body_output_type = DataTypeFromPrecision(ti_output_type);
+        auto reorderPrim = cldnn::reorder(new_internal_id, internal_id, cldnn::format::any, new_body_output_type);
+        body_topology.add(reorderPrim);
+        UpdateBackedge(back_edges, internal_id, new_internal_id);
+        internal_id = std::move(new_internal_id);
+
+        // update primitive_map
         if (const auto& concatOutput =
             std::dynamic_pointer_cast<TensorIterator::ConcatOutputDescription>(output_mapping)) {
             // output requires concatenation
