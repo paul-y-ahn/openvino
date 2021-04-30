@@ -21,15 +21,48 @@
 #include "register_gpu.hpp"
 #include "mutable_data_inst.h"
 #include "input_layout_inst.h"
+#include "memory_impl.h"
 #include <vector>
 #include <algorithm>
+#include <fstream>
+#include <chrono>
+#include <iomanip>
+
+#define PROFILE_DATA_PREFIX "/home/eunsoo/openvino-dev/result-profile/"
+#define BEGIN_PROFILE auto __prof__start = std::chrono::high_resolution_clock::now();
+#define END_PROFILE auto __prof__end = std::chrono::high_resolution_clock::now(); \
+    { \
+        std::chrono::duration<uint64_t, std::nano> elapsed = __prof__end - __prof__start; \
+        prof_data += elapsed.count(); \
+        ++this->count; \
+        this->net_id = instance.get_network().get_id(); \
+        this->body_net_id = instance.get_body_network()->get_id(); \
+        this->stream_id = instance.get_network().get_stream_id(); \
+        save_profile_data(); \
+    } \
 
 namespace cldnn {
 namespace gpu {
 struct loop_gpu : typed_primitive_impl<loop> {
     const loop_node& node;
 
-    explicit loop_gpu(const loop_node& node) : node(node) {}
+    explicit loop_gpu(const loop_node& node) : node(node), prof_data(0), count(0) {}
+
+    uint64_t prof_data;
+    // uint64_t avg;
+    int count;
+    int net_id;
+    int body_net_id;
+    int stream_id;
+
+    void save_profile_data() {
+        std::string filename = "prof_" +
+            std::to_string(stream_id) + '_' +
+            std::to_string(net_id) + '_' +
+            std::to_string(body_net_id)+".txt";
+        std::ofstream ofs(PROFILE_DATA_PREFIX + filename);
+        ofs << prof_data / count << "                        \n";
+    }
 
     // helpers
     static bool check_if_can_be_optimized(const loop_inst::backedge_memory_binding& backedge, const loop_inst& instance) {
@@ -100,15 +133,13 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 const int linear_size = static_cast<int>(croped_layout.get_linear_size());
                 set_primitive_memory(*body_network, internal_id, *croped_mem);
 
-                loop_inst::external_memory_binding memory_binding;
-                memory_binding.id = primitive_map.internal_id;
-                memory_binding.from_mem = croped_mem;
-                memory_binding.to_mem = to_mem;
-                memory_binding.iteration_elements = linear_size;
-                memory_binding.stride = linear_size * primitive_map.stride;
+                const int stride = linear_size * primitive_map.stride;
                 const int start = primitive_map.start < 0? node.get_max_iteration() - 1: primitive_map.start;
-                memory_binding.offset = linear_size * start;
-                memory_binding.initial_offset = memory_binding.offset;
+                const int offset = linear_size * start;
+                loop_inst::external_memory_binding memory_binding(
+                    primitive_map.internal_id, primitive_map.external_id,
+                    croped_mem, to_mem, croped_layout,
+                    linear_size, stride, offset, offset);
                 output_iteration_mem.push_back(memory_binding);
             }
         }
@@ -142,15 +173,14 @@ struct loop_gpu : typed_primitive_impl<loop> {
                     memory_impl::ptr croped_mem = instance.get_network().get_engine().allocate_memory(croped_layout, 0);
                     croped_input_mem_pool[input_pm.internal_id] = croped_mem;
                     const int linear_size = static_cast<int>(croped_layout.get_linear_size());
-                    loop_inst::external_memory_binding memory_binding;
-                    memory_binding.id = input_pm.internal_id;
-                    memory_binding.from_mem = (memory_impl::ptr)&memory;
-                    memory_binding.to_mem = croped_mem;
-                    memory_binding.iteration_elements = linear_size;
-                    memory_binding.stride = linear_size * input_pm.stride;
+                    const int stride = linear_size * input_pm.stride;
                     const int start = input_pm.start < 0? node.get_max_iteration() - 1: input_pm.start;
-                    memory_binding.offset = linear_size * start;
-                    memory_binding.initial_offset = memory_binding.offset;
+                    const int offset = linear_size * start;
+                    loop_inst::external_memory_binding memory_binding(
+                        input_pm.external_id, input_pm.internal_id,
+                        (memory_impl::ptr)&memory,
+                        croped_mem, croped_layout,
+                        linear_size, stride, offset, offset);
                     iteration_mem.push_back(memory_binding);
                     body_network->set_input_data(input_pm.internal_id, *croped_mem.get());
                 } else { // "normal" mem
@@ -292,6 +322,55 @@ struct loop_gpu : typed_primitive_impl<loop> {
     }
 
     event_impl::ptr execute_impl(const std::vector<event_impl::ptr>& events, loop_inst& instance) override {
+        // return execute_impl_orig(events, instance);
+        return execute_impl_opt(events, instance);
+    }
+
+    void set_input_data(network_impl& body_network, const primitive_id& id, memory_impl& mem) {
+        std::shared_ptr<primitive_inst> primitive_inst = body_network.get_primitive(id);
+        if (primitive_inst == nullptr)
+            throw std::runtime_error("topology doesn't contain primitive:" + id);
+        if (primitive_inst->type() != input_layout::type_id()) {
+            CLDNN_ERROR_MESSAGE(id, "primitive " + id + " is not an input");
+        }
+
+        // wait users
+        if (body_network.has_event(id)) {
+            body_network.get_primitive_event(id)->wait();
+        }
+        const auto& users = primitive_inst->get_users();
+        for (const auto& user : users) {
+            if (body_network.has_event(user->id())) {
+                const auto& event = body_network.get_primitive_event(user->id());
+                event->wait();
+            }
+        }
+
+        auto input = std::static_pointer_cast<input_layout_inst>(primitive_inst);
+        input->set_data(mem);
+    }
+
+    void set_output_data(network_impl& body_network, const primitive_id& id, memory_impl& mem) {
+        std::shared_ptr<primitive_inst> primitive_inst = body_network.get_primitive(id);
+        if (primitive_inst == nullptr)
+            throw std::runtime_error("topology doesn't contain primitive:" + id);
+        if (!primitive_inst->is_output()) {
+            CLDNN_ERROR_MESSAGE(id, "primitive " + id + " is not an output");
+        }
+
+        // wait dependencies
+        const auto& deps = primitive_inst->dependencies();
+        for (const auto& dep : deps) {
+            if (body_network.has_event(dep->id())) {
+                const auto& event = body_network.get_primitive_event(dep->id());
+                event->wait();
+            }
+        }
+        auto output = std::static_pointer_cast<input_layout_inst>(primitive_inst);
+        output->set_output_memory(mem);
+    }
+
+    event_impl::ptr execute_impl_opt(const std::vector<event_impl::ptr>& events, loop_inst& instance) {
         for (auto& e : events)
             e->wait();
         auto& outer_network = instance.get_network();
@@ -352,13 +431,145 @@ struct loop_gpu : typed_primitive_impl<loop> {
 
         const auto input_ids = body_network->get_input_ids();
         const auto output_ids = body_network->get_output_ids();
+        {
+            // lock input memory till all iterations (sliced)
+            auto& input_iteration_mem = instance.input_iteration_mem;
+            std::vector<mem_lock<void>> input_iter_data;
+            input_iter_data.reserve(input_iteration_mem.size());
+            for (const auto& iter_mem : input_iteration_mem) {
+                input_iter_data.emplace_back(iter_mem.from_mem);
+            }
+
+            // lock output memory till all iterations (concat)
+            auto& output_iteration_mem = instance.output_iteration_mem;
+            std::vector<mem_lock<void>> output_iter_data;
+            output_iter_data.reserve(output_iteration_mem.size());
+            for (const auto& iter_mem : output_iteration_mem) {
+                output_iter_data.emplace_back(iter_mem.to_mem);
+            }
+
+            while (current_iteration < trip_count && execution_condition) {
+                // Set sliced input memory offset
+                for (size_t i = 0; i < input_iteration_mem.size(); ++i) {
+                    auto& memory = input_iter_data.at(i);
+                    auto& iter_mem = input_iteration_mem.at(i);
+                    void* data = static_cast<uint8_t*>(memory.data()) + iter_mem.get_byte_offset();
+                    simple_attached_memory attached_mem(iter_mem.cropped_layout, data, body_network->get_id());
+                    set_input_data(*body_network, iter_mem.to_id, attached_mem);
+                    // body_network->set_input_data(iter_mem.to_id, attached_mem);
+                    iter_mem.offset += iter_mem.stride;
+                }
+                // Set sliced output memory offset
+                for (size_t i = 0; i < output_iteration_mem.size(); ++i) {
+                    auto& memory = output_iter_data.at(i);
+                    auto& iter_mem = output_iteration_mem.at(i);
+                    void* data = static_cast<uint8_t*>(memory.data()) + iter_mem.get_byte_offset();
+                    simple_attached_memory attached_mem(iter_mem.cropped_layout, data, body_network->get_id());
+                    set_output_data(*body_network, iter_mem.from_id, attached_mem);
+                    // body_network->set_output_memory(iter_mem.from_id, attached_mem);
+                    iter_mem.offset += iter_mem.stride;
+                }
+
+                body_network->execute(events);
+                body_network->reset_execution();
+
+                // update index & execution condition for the next iteration
+                if (node.is_current_iteration_used()) {
+                    current_iteration = read_int(*current_iteration_mem);
+                    ++current_iteration;
+                    write_int(*current_iteration_mem, current_iteration);
+                } else {
+                    ++current_iteration;
+                }
+                if (node.is_execution_condition_used()) {
+                    execution_condition = read_int(*execution_condition_mem);
+                }
+
+                // copy back_edges
+                for (auto edge_mem_bind : instance.backedge_mem) {
+                    if (!edge_mem_bind.is_optimized) {
+                        copy_entire_buffer(*edge_mem_bind.from_mem, *edge_mem_bind.to_mem);
+                    }
+                }
+            }
+        }
+
+
+        const primitive_id& num_iteration_id = node.get_num_iteration_id();
+        memory_impl& num_iteration_mem = outer_network.get_primitive(num_iteration_id)->output_memory();
+        write_int(num_iteration_mem, current_iteration);
+
+        dynamic_cast<cldnn::user_event*>(ev.get())->set();
+        return ev;
+    }
+
+    event_impl::ptr execute_impl_orig(const std::vector<event_impl::ptr>& events, loop_inst& instance) {
+        BEGIN_PROFILE
+        for (auto& e : events)
+            e->wait();
+        auto& outer_network = instance.get_network();
+        const uint32_t& net_id = instance.get_network().get_id();
+        auto ev = outer_network.get_engine().create_user_event(net_id, false);
+        auto body_network = instance.get_body_network();
+
+        // read trip_count from outer network
+        const primitive_id& trip_count_id = node.get_trip_count_id();
+        memory_impl& trip_count_mem = outer_network.get_primitive(trip_count_id)->output_memory();
+        int64_t trip_count = read_int(trip_count_mem);
+        if (trip_count < 0) {
+            trip_count = std::numeric_limits<int64_t>::max(); // infinity loop
+        }
+
+        // read initial execution condition from outer network
+        const primitive_id& initial_execution_id = node.get_initial_execution_id();
+        memory_impl& initial_execution_mem = outer_network.get_primitive(initial_execution_id)->output_memory();
+        int64_t execution_condition = read_int(initial_execution_mem);
+
+        // shortcut of current_iteration memory in body network (slice of input)
+        memory_impl* current_iteration_mem = nullptr;
+        if (node.is_current_iteration_used()) {
+            const primitive_id& current_iteration_id = node.get_current_iteration_id();
+            current_iteration_mem = &body_network->get_primitive(current_iteration_id)->output_memory();
+        }
+
+
+        // shortcut of execution_condition memory in body network
+        memory_impl* execution_condition_mem = nullptr;
+        if (node.is_execution_condition_used()) {
+            const primitive_id& condition_id = node.get_condition_id();
+            execution_condition_mem = &body_network->get_primitive(condition_id)->output_memory();
+        }
+
+        // output memory must be set before input_memory to set backedge memory properly
+        if (!instance.memroy_set) {
+            set_output_memory(instance);
+            set_input_memory(instance);
+            for (auto& backedge : instance.backedge_mem) {
+                // check input buffer != output buffer
+                if (!check_if_can_be_optimized(backedge, instance)) {
+                    continue;
+                }
+                body_network->set_input_data(backedge.to_id, *backedge.from_mem);
+                backedge.is_optimized = true;
+            }
+            instance.memroy_set = true;
+        } else {
+            instance.reset_memory_binding_offset();
+        }
+
+        int64_t current_iteration = 0;
+        if (node.is_current_iteration_used()) {
+            write_int(*current_iteration_mem, current_iteration);
+        }
+
+        const auto input_ids = body_network->get_input_ids();
+        const auto output_ids = body_network->get_output_ids();
         while (current_iteration < trip_count && execution_condition) {
             // copy input mem
             for (auto& iter_mem : instance.input_iteration_mem) {
                 copy_buffer(*iter_mem.from_mem, *iter_mem.to_mem, iter_mem.iteration_elements, iter_mem.offset);
                 iter_mem.offset += iter_mem.stride;
             }
-
             body_network->execute(events);
             body_network->reset_execution();
 
@@ -393,6 +604,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         write_int(num_iteration_mem, current_iteration);
 
         dynamic_cast<cldnn::user_event*>(ev.get())->set();
+        END_PROFILE
         return ev;
     }
 

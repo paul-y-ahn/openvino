@@ -302,13 +302,37 @@ public:
     };
 
     struct external_memory_binding {
-        primitive_id id;
+        external_memory_binding(const primitive_id& from_id,
+                                const primitive_id& to_id,
+                                memory_impl::ptr from_mem,
+                                memory_impl::ptr to_mem,
+                                layout cropped_layout,
+                                int iteration_elements = 0,
+                                int stride = 0,
+                                int offset = 0,
+                                int initial_offset = 0) :
+            from_id(from_id),
+            to_id(to_id),
+            from_mem(from_mem),
+            to_mem(to_mem),
+            cropped_layout(cropped_layout),
+            iteration_elements(iteration_elements),
+            stride(stride),
+            offset(offset),
+            initial_offset(initial_offset) {}
+        int get_byte_offset() const {
+            const int elem_size = data_type_traits::size_of(cropped_layout.data_type);
+            return elem_size * offset;
+        }
+        primitive_id from_id;
+        primitive_id to_id;
         memory_impl::ptr from_mem;
         memory_impl::ptr to_mem;
-        int iteration_elements = 0;
-        int stride = 0;
-        int offset = 0;
-        int initial_offset = 0;
+        layout cropped_layout;
+        int iteration_elements;
+        int stride;
+        int offset;
+        int initial_offset;
     };
 
     static layout calc_output_layout(const loop_node& node);
