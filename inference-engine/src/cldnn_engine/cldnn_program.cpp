@@ -119,6 +119,7 @@ Program::Program(InferenceEngine::CNNNetwork& network, std::shared_ptr<const cld
 
     m_max_batch = config.max_dynamic_batch;
 
+#if 0
     if (config.max_dynamic_batch > 1) {
         for (int b = m_bv_sz - 1; b >= 0; b--) {
             inputLayouts.clear();
@@ -134,6 +135,50 @@ Program::Program(InferenceEngine::CNNNetwork& network, std::shared_ptr<const cld
         m_programs.emplace_back(BuildProgram(ops, networkInputs, networkOutputs, build));
         m_engine->release_pending_memory(0);
     }
+#else
+
+    if (build) {
+        if (config.max_dynamic_batch > 1) {
+            for (int b = m_bv_sz - 1; b >= 0; b--) {
+                inputLayouts.clear();
+                outputDims.clear();
+                primitiveIDs.clear();
+                blobMemCache.clear();
+
+                ChangeInputBatch(1U << static_cast<unsigned>(b));
+                m_programs.insert(m_programs.begin(), BuildProgram(ops, networkInputs, networkOutputs, build));
+                m_engine->release_pending_memory(0);
+            }
+        } else {
+            m_programs.emplace_back(BuildProgram(ops, networkInputs, networkOutputs, build));
+            m_engine->release_pending_memory(0);
+        }
+    } else {    // Create only topology
+        if (config.max_dynamic_batch > 1) {
+            for (int b = m_bv_sz - 1; b >= 0; b--) {
+                inputLayouts.clear();
+                outputDims.clear();
+                primitiveIDs.clear();
+                blobMemCache.clear();
+
+                ChangeInputBatch(1U << static_cast<unsigned>(b));
+                m_programs.insert(m_programs.begin(), {});
+                PrepareBuild(networkInputs, networkOutputs);
+                for (const auto& op : ops) {
+                    CreateSingleLayerPrimitive(*m_topology, op);
+                }
+                m_engine->release_pending_memory(0);
+            }
+        } else {
+            m_programs.insert(m_programs.begin(), {});
+            PrepareBuild(networkInputs, networkOutputs);
+            for (const auto& op : ops) {
+                CreateSingleLayerPrimitive(*m_topology, op);
+            }
+            m_engine->release_pending_memory(0);
+        }
+    }
+#endif
 }
 
 int Program::GetMaxBatchSizeForSingleProgram() {
