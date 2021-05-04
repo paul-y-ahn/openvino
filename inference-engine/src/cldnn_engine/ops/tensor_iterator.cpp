@@ -39,33 +39,8 @@ static cldnn::mutable_data CreateOutputData(Program &p, const std::shared_ptr<ng
     const auto tensor = CldnnTensorFromIEDims(op->get_output_shape(output_idx));
     cldnn::layout output_layout = cldnn::layout(precision, format, tensor);
     auto mem = cldnn::memory::allocate(p.GetEngine(), output_layout);
-    auto md = cldnn::mutable_data(id, {input}, mem);
+    auto md = cldnn::mutable_data(id, {input}, mem); // cldnn::data cannot set dependency
     return md;
-}
-
-static cldnn::primitive_id GetOutputPrimitiveID(const Program& p, const std::shared_ptr<ngraph::Node>& op) {
-    cldnn::primitive_id output_id = layer_type_lower(op) + ":" + op->get_friendly_name();
-    auto found = std::find_if(p.primitiveIDs.begin(), p.primitiveIDs.end(),
-        [&output_id, &p](const std::pair<cldnn::primitive_id, cldnn::primitive_id>& pm) {
-            return pm.second == output_id;
-        });
-    assert(found != p.primitiveIDs.end());
-    return found->first;
-}
-
-static cldnn::primitive_id GetPrimitiveID(const Program& p, const std::shared_ptr<ngraph::Node>& op) {
-    auto found = std::find_if(p.primitivesToIRLayersMap.begin(), p.primitivesToIRLayersMap.end(),
-        [&op, &p](const std::pair<cldnn::primitive_id, std::vector<std::string>>& pm) {
-            assert(pm.second.size() == 1);
-            return pm.second.front() == op->get_friendly_name();
-        });
-    assert(found != p.primitivesToIRLayersMap.end());
-    return found->first;
-}
-
-static cldnn::primitive_id GetInputPrimitiveID(const std::shared_ptr<ngraph::Node>& op, const size_t index) {
-    const std::shared_ptr<ngraph::op::Op> op2 = std::dynamic_pointer_cast<ngraph::op::Op>(op);
-    return layer_type_name_ID(op2->inputs().at(index).get_source_output().get_node());
 }
 
 static void UpdateBackedge(std::vector<cldnn::loop::backedge_mapping>& back_edges,
@@ -86,32 +61,37 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
     Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), false);
     auto body_topology = *body_program.GetTopology();
 
-    // setup primitive_map and back_edges
-    const auto& input_mappings = op->get_input_descriptions();
-    const auto& output_mappings = op->get_output_descriptions();
+    // setup input_mappings/ output_mappings and back_edges
+    const auto& loop_input_descs = op->get_input_descriptions();
+    const auto& loop_output_descs = op->get_output_descriptions();
     const auto& body_inputs = op->get_body()->get_parameters();
     const auto& body_outputs = op->get_body()->get_results();
 
-    std::vector<cldnn::loop::primitive_mapping> primitive_map;
+    std::vector<cldnn::loop::primitive_mapping> input_mappings;
+    std::vector<cldnn::loop::primitive_mapping> output_mappings;
     std::vector<cldnn::loop::backedge_mapping> back_edges;
 
-    for (const auto& input_mapping : input_mappings) {
-        const cldnn::primitive_id& external_id = inputPrimitives.at(input_mapping->m_input_index);
-        auto& body_input = body_inputs.at(input_mapping->m_body_parameter_index);
-
+    // set input mapping & back edges
+    for (const auto& loop_input_desc : loop_input_descs) {
+        const cldnn::primitive_id& external_id = inputPrimitives.at(loop_input_desc->m_input_index);
+        auto& body_input = body_inputs.at(loop_input_desc->m_body_parameter_index);
         cldnn::primitive_id internal_id = layer_type_name_ID(body_input);
+
+        // set input mapping
         if (const auto& sliceInfo =
-            std::dynamic_pointer_cast<TensorIterator::SliceInputDescription>(input_mapping)) {
-            // input with iteration axis
-            primitive_map.emplace_back(cldnn::loop::INPUT, external_id, internal_id,
-                sliceInfo->m_axis, sliceInfo->m_start, sliceInfo->m_end, sliceInfo->m_stride);
+            std::dynamic_pointer_cast<TensorIterator::SliceInputDescription>(loop_input_desc)) {
+            // sliced input
+            input_mappings.emplace_back(external_id, internal_id, sliceInfo->m_axis,
+                sliceInfo->m_start, sliceInfo->m_end, sliceInfo->m_stride);
         } else {
             // InvariantInputDescription or InputDescription
-            // input without iteration axis
-            primitive_map.emplace_back(cldnn::loop::INPUT, external_id, internal_id);
+            // input without slicing
+            input_mappings.emplace_back(external_id, internal_id);
         }
+
+        // set back edges
         if (const auto& mergedInput =
-            std::dynamic_pointer_cast<TensorIterator::MergedInputDescription>(input_mapping)) {
+            std::dynamic_pointer_cast<TensorIterator::MergedInputDescription>(loop_input_desc)) {
             // backedge
             const auto& to = body_inputs.at(mergedInput->m_body_parameter_index);
             const auto& from = body_outputs.at(mergedInput->m_body_value_index);
@@ -121,9 +101,11 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
         }
     }
 
+    // set trip count, initial execution condition, num iteration primitives
+    // they should be mutable_data to prevent from being optimized out
     std::string layerName = layer_type_name_ID(op);
     const cldnn::primitive_id trip_count_id = layerName + "_tripCount";
-    const int32_t num_iterations = op->get_num_iterations();
+    const int64_t num_iterations = op->get_num_iterations();
     assert(num_iterations >= 0);
     {
         cldnn::mutable_data trip_count = CreateIntData(p, trip_count_id, num_iterations);
@@ -149,9 +131,10 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
         p.AddInnerPrimitiveToProfiler(num_iteration_id, layerName, op);
     }
 
+    // set output mapping
     const auto& ti_outputs = op->outputs();
-    for (const auto& output_mapping : output_mappings) {
-        const int output_idx = output_mapping->m_output_index;
+    for (const auto& loop_output_desc : loop_output_descs) {
+        const int output_idx = loop_output_desc->m_output_index;
 
         // Add additional mutable_data for multiple outputs
         // primitive ID should be <TI primitive ID>.<output_idx> if output_idx > 0
@@ -169,9 +152,10 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
             p.primitiveIDs[layerName] = layerName;
             external_id = layerName;
         }
-        const auto& body_output = body_outputs.at(output_mapping->m_body_value_index);
+        const auto& body_output = body_outputs.at(loop_output_desc->m_body_value_index);
         cldnn::primitive_id internal_id = layer_type_name_ID(body_output);
 
+        // TODO(eunsoo): reorder required?
         // add additional reorder in case TI output type != body output type
         const auto& ti_output_type = ti_outputs.at(output_idx).get_element_type();
         cldnn::primitive_id new_internal_id = internal_id + "_reorder";
@@ -183,15 +167,15 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
 
         // update primitive_map
         if (const auto& concatOutput =
-            std::dynamic_pointer_cast<TensorIterator::ConcatOutputDescription>(output_mapping)) {
-            // output requires concatenation
-            primitive_map.emplace_back(cldnn::loop::OUTPUT, external_id, internal_id,
-                concatOutput->m_axis, concatOutput->m_start, concatOutput->m_end, concatOutput->m_stride);
+            std::dynamic_pointer_cast<TensorIterator::ConcatOutputDescription>(loop_output_desc)) {
+            // output which requires concatenation
+            output_mappings.emplace_back(external_id, internal_id, concatOutput->m_axis,
+                concatOutput->m_start, concatOutput->m_end, concatOutput->m_stride);
         }
         if (const auto& body_desc =
-            std::dynamic_pointer_cast<TensorIterator::BodyOutputDescription>(output_mapping)) {
-            // output requires no concatenation
-            primitive_map.emplace_back(cldnn::loop::OUTPUT, external_id, internal_id);
+            std::dynamic_pointer_cast<TensorIterator::BodyOutputDescription>(loop_output_desc)) {
+            // output which requires no concatenation
+            output_mappings.emplace_back(external_id, internal_id);
         }
     }
 
@@ -202,9 +186,10 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
         trip_count_id,          /* trip_count data in outer network, always same as num_iterations in TI */
         execution_condition_id, /* initial_execution_condition data in outer network, always true in TI */
         num_iteration_id,       /* actual number of iteration data in body network */
-        primitive_map,          /* primitive mapping connecting outer network and innter network */
+        input_mappings,         /* input mappings connecting outer network and inner network */
+        output_mappings,        /* output mappings connecting outer network and inner network */
         back_edges,             /* back edge mapping */
-        num_iterations);        /* max iteration */
+        num_iterations);        /* max iteration, i.e. length of iteration axis */
 
     p.AddPrimitive(loopPrimitive);
     p.AddPrimitiveToProfiler(op);

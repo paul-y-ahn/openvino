@@ -31,16 +31,14 @@ template<>
 struct typed_program_node<loop> : public typed_program_node_base<loop> {
 private:
     using parent = typed_program_node_base<loop>;
-    using primitive_map_t = std::vector<loop::primitive_mapping>;
     topology body_topology;
     topology_impl& body;
 
-    primitive_map_t input_primitive_map;
-    primitive_map_t output_primitive_map;
+    std::vector<loop::primitive_mapping> input_mappings;
+    std::vector<loop::primitive_mapping> output_mappings;
     std::vector<cldnn::loop::backedge_mapping> back_edges;
     bool use_current_iteration;
     bool use_execution_condition;
-    bool output_need_concat;
     mutable program_impl::ptr body_program;
     mutable std::map<primitive_id, memory_impl::ptr> backedge_mem_impls;
     mutable std::map<primitive_id, std::shared_ptr<mutable_data>> backedge_layers;
@@ -62,16 +60,14 @@ public:
         parent(prim, prog),
         body_topology(this->get_primitive()->body),
         body(*body_topology.get()),
+        input_mappings(this->get_primitive()->input_mappings),
+        output_mappings(this->get_primitive()->output_mappings),
         back_edges(this->get_primitive()->back_edges),
         use_current_iteration(!this->get_primitive()->current_iteration_id.empty()),
         use_execution_condition(!this->get_primitive()->condition_id.empty()),
         max_iteration(this->get_primitive()->max_iteration < 0?
                 this->get_primitive()->DEFAULT_MAX_ITERATION :
-                this->get_primitive()->max_iteration) {
-            input_primitive_map = this->get_primitive_mapping(this->get_primitive()->primitive_map, loop::INPUT);
-            output_primitive_map = this->get_primitive_mapping(this->get_primitive()->primitive_map, loop::OUTPUT);
-            output_need_concat = output_primitive_map.front().axis >= 0;
-        }
+                this->get_primitive()->max_iteration) {}
 
     mutable int iteration_axis;
     int32_t max_iteration;
@@ -82,11 +78,10 @@ public:
     bool is_output_working_as_backedge() const { return output_is_backedge; }
     bool is_current_iteration_used() const { return use_current_iteration; }
     bool is_execution_condition_used() const { return use_execution_condition; }
-    bool need_output_concat() const { return output_need_concat; }
 
     static std::vector<const loop::primitive_mapping*> find_primitive_mappings(
             const primitive_id& external_id,
-            const primitive_map_t& primitive_map) {
+            const std::vector<loop::primitive_mapping>& primitive_map) {
         std::vector<const loop::primitive_mapping*> ret;
         for (auto it = primitive_map.begin(); it != primitive_map.end(); ++it) {
             if (it->external_id == external_id) {
@@ -122,28 +117,28 @@ public:
         return calculated_layout;
     }
 
-    const primitive_map_t& get_input_primitive_map() const { return input_primitive_map; }
-    const primitive_map_t& get_output_primitive_map() const { return output_primitive_map; }
+    const std::vector<loop::primitive_mapping>& get_input_mappings() const { return input_mappings; }
+    const std::vector<loop::primitive_mapping>& get_output_mappings() const { return output_mappings; }
 
     void update_primitive_map(const primitive_id& prevID, const primitive_id& newID, bool external_id = true) {
         if (external_id) {
-            for (auto& pm : input_primitive_map) {
+            for (auto& pm : input_mappings) {
                 if (pm.external_id == prevID) {
                     pm.external_id = newID;
                 }
             }
-            for (auto& pm : output_primitive_map) {
+            for (auto& pm : output_mappings) {
                 if (pm.external_id == prevID) {
                     pm.external_id = newID;
                 }
             }
         } else {
-            for (auto& pm : input_primitive_map) {
+            for (auto& pm : input_mappings) {
                 if (pm.internal_id == prevID) {
                     pm.internal_id = newID;
                 }
             }
-            for (auto& pm : output_primitive_map) {
+            for (auto& pm : output_mappings) {
                 if (pm.internal_id == prevID) {
                     pm.internal_id = newID;
                 }
@@ -160,16 +155,6 @@ public:
     }
 
     const std::vector<cldnn::loop::backedge_mapping>& get_back_edges() const { return back_edges;}
-
-    static primitive_map_t get_primitive_mapping(const primitive_map_t& primitive_map, loop::primitive_type type) {
-        primitive_map_t ret;
-        for (const auto& p : primitive_map) {
-            if (p.type == type) {
-                ret.push_back(p);
-            }
-        }
-        return ret;
-    }
 
     static bool is_integer(const data_types& data_type) {
         switch (data_type) {
@@ -221,7 +206,7 @@ public:
                 continue;
             }
 
-            for (const auto& pm : input_primitive_map) {
+            for (const auto& pm : input_mappings) {
                 layout calculated_layout = calc_body_input_layout(pm);
                 const primitive_id& internal_input_id = pm.internal_id;
 
@@ -237,7 +222,7 @@ public:
         // setup internal output
         // TODO: handle multiple output_primitive_map
         std::set<primitive_id> output_names;
-        output_names.insert(output_primitive_map.begin()->internal_id);
+        output_names.insert(output_mappings.begin()->internal_id);
         const auto& back_edges = get_primitive()->back_edges;
 
         // add current_iteration_id in body network, condition_id if exist
@@ -247,11 +232,11 @@ public:
         // setup outputs for backedges
         for (auto& back_edge : back_edges) {
             // check whether the back_edge.to has its corresponding primitive_mapping
-            const auto& input_mapping = std::find_if(input_primitive_map.begin(), input_primitive_map.end(),
+            const auto& input_mapping = std::find_if(input_mappings.begin(), input_mappings.end(),
                 [&](const loop::primitive_mapping& pm) {
                     return pm.internal_id == back_edge.to;
                 });
-            if (input_mapping == input_primitive_map.end()) {
+            if (input_mapping == input_mappings.end()) {
                 std::string msg = "No primitive mapping for backedge (internal_id: " + back_edge.to + ')';
                 CLDNN_ERROR_MESSAGE(this->id(), msg.c_str());
             }
@@ -311,36 +296,55 @@ public:
         }
     };
 
-    struct slice_memory_binding {
-        enum CopyDirection {
-            OUTER_TO_BODY,
-            BODY_TO_OUTER,
-        };
-        slice_memory_binding(const primitive_id& from_id,
-                                const primitive_id& to_id,
-                                CopyDirection direction,
-                                memory_impl::ptr concatenated_mem,
-                                layout cropped_layout,
-                                int iteration_elements = 0,
-                                int stride = 0,
-                                int initial_offset = 0) :
+    struct sliced_memory_binding {
+        sliced_memory_binding(const primitive_id& from_id,
+                             const primitive_id& to_id,
+                             memory_impl::ptr concatenated_mem,
+                             std::vector<memory_impl::ptr> sliced_mem,
+                             int iteration_elements = 0,
+                             int stride = 0,
+                             int initial_offset = 0) :
             from_id(from_id),
             to_id(to_id),
-            direction(direction),
             concatenated_mem(concatenated_mem),
-            cropped_layout(cropped_layout),
-            iteration_elements(iteration_elements),
-            stride(stride),
-            initial_offset(initial_offset) { }
+            sliced_mem(sliced_mem),
+            bytes_per_element(data_type_traits::size_of(concatenated_mem->get_layout().data_type)),
+            byte_size_iteration_elements(iteration_elements * bytes_per_element),
+            byte_size_stride(stride * bytes_per_element),
+            byte_size_initial_offset(initial_offset * bytes_per_element) {}
+
+        void copy_to_concatenated_mem() const {
+            mem_lock<uint8_t> to_lock{ concatenated_mem };
+            int output_offset = byte_size_initial_offset;
+            for (const auto& from_mem : sliced_mem) {
+                mem_lock<uint8_t> from_lock{ from_mem };
+                uint8_t* src = from_lock.data();
+                uint8_t* dst = to_lock.data() + output_offset;
+                std::copy(src, src + byte_size_iteration_elements, dst);
+                output_offset += byte_size_stride;
+            }
+        }
+
+        memory_impl::ptr copy_and_get_sliced_mem(int iteration) const {
+            const int offset = byte_size_initial_offset + byte_size_stride * iteration;
+            {
+                mem_lock<uint8_t> from_lock{ concatenated_mem };
+                mem_lock<uint8_t> to_lock{ sliced_mem.at(iteration) };
+                const auto src = from_lock.begin() + offset;
+                const auto dst = to_lock.begin();
+                std::copy(src, src + byte_size_iteration_elements, dst);
+            }
+            return sliced_mem.at(iteration);
+        }
+
         primitive_id from_id;
         primitive_id to_id;
-        CopyDirection direction;
         memory_impl::ptr concatenated_mem;
         std::vector<memory_impl::ptr> sliced_mem;
-        layout cropped_layout;
-        int iteration_elements;
-        int stride;
-        int initial_offset;
+        const int bytes_per_element;
+        const int byte_size_iteration_elements;
+        const int byte_size_stride;
+        const int byte_size_initial_offset;
         std::shared_ptr<primitive_inst> from_prim;
         std::shared_ptr<primitive_inst> to_prim;
     };
@@ -349,8 +353,8 @@ public:
     static std::string to_string(const loop_node& node);
     bool memroy_set;
     std::vector<backedge_memory_binding> backedge_mem;
-    std::vector<slice_memory_binding> input_iteration_mem;
-    std::vector<slice_memory_binding> output_iteration_mem;
+    std::vector<sliced_memory_binding> input_iteration_mem;
+    std::vector<sliced_memory_binding> output_iteration_mem;
 
 public:
     typed_primitive_inst(network_impl& network, const loop_node& node);

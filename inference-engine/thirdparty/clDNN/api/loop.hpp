@@ -89,12 +89,6 @@ namespace cldnn {
 struct loop : public primitive_base<loop> {
     CLDNN_DECLARE_PRIMITIVE(loop)
 
-    /// @brief primitive_mapping type
-    enum primitive_type: int32_t {
-        INPUT,
-        OUTPUT,
-    };
-
     struct primitive_mapping {
         /// @brief Constructs a mapping from external input/output primitive to input/output primitive in body topology
         ///
@@ -104,9 +98,8 @@ struct loop : public primitive_base<loop> {
         /// @param start Index where the iteration starts from. Applies only when axis >=0.
         /// @param end Index where iteration ends. Negative value means counting indexes from the end. Applies only when axis >=0.
         /// @param stride Step of iteration. Negative value means backward iteration. Applies only when axis >=0.
-        primitive_mapping(primitive_type type, primitive_id external_id, primitive_id internal_id,
+        primitive_mapping(primitive_id external_id, primitive_id internal_id,
             int32_t axis = -1, int32_t start = 0, int32_t end = -1, int32_t stride = 1) :
-            type(type),
             external_id(external_id),
             internal_id(internal_id),
             axis(axis),
@@ -114,7 +107,6 @@ struct loop : public primitive_base<loop> {
             end(end),
             stride(stride)
             {}
-        primitive_type type;
         primitive_id external_id;
         primitive_id internal_id;
         int32_t axis;
@@ -166,7 +158,8 @@ struct loop : public primitive_base<loop> {
         const primitive_id& trip_count_id,
         const primitive_id& initial_condition_id,
         const primitive_id& num_iteration_id,
-        const std::vector<primitive_mapping>& primitive_map,
+        const std::vector<primitive_mapping>& input_mappings,
+        const std::vector<primitive_mapping>& output_mappings,
         const std::vector<backedge_mapping>& back_edges,
         int32_t max_iteration = -1,
         const primitive_id& current_iteration_id = primitive_id(),
@@ -179,7 +172,8 @@ struct loop : public primitive_base<loop> {
               num_iteration_id(num_iteration_id),
               current_iteration_id(current_iteration_id),
               condition_id(condition_id),
-              primitive_map(primitive_map),
+              input_mappings(input_mappings),
+              output_mappings(output_mappings),
               back_edges(back_edges),
               max_iteration(max_iteration)
               {}
@@ -203,7 +197,8 @@ struct loop : public primitive_base<loop> {
     primitive_id condition_id;
 
     /// @brief Rules to map input or output data of loop layer onto input or output data of body topology.
-    std::vector<primitive_mapping> primitive_map;
+    std::vector<primitive_mapping> input_mappings;
+    std::vector<primitive_mapping> output_mappings;
 
     /// @brief Rules to transfer data from body outputs at one iteration to body input at the next iteration.
     std::vector<backedge_mapping> back_edges;
@@ -218,10 +213,7 @@ protected:
             std::ref(trip_count_id), std::ref(initial_execution_id), std::ref(num_iteration_id)
         };
         // add external_id in dependencies if not exist
-        for (const auto& mapping : primitive_map) {
-            if (mapping.type == loop::OUTPUT) {
-                continue;
-            }
+        for (const auto& mapping : input_mappings) {
             auto target = std::find(input.begin(), input.end(), mapping.external_id);
             if (target == input.end()) {
                 ret.push_back(std::ref(mapping.external_id));

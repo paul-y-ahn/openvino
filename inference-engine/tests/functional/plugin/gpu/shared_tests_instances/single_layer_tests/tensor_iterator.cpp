@@ -13,9 +13,9 @@ namespace {
     INSTANTIATE_TEST_CASE_P(smoke_TensorIteratorCommon, TensorIteratorTest,
         ::testing::Combine(
             ::testing::ValuesIn({ false }), // should decompose
-            ::testing::ValuesIn(std::vector<size_t> {4}), // seq lengths
+            ::testing::ValuesIn(std::vector<size_t> {4, 16, 32}), // seq lengths
             ::testing::ValuesIn(std::vector<size_t> {1}), // only single batch supported
-            ::testing::ValuesIn(std::vector<size_t> {4, 8, 16}), // hidden size
+            ::testing::ValuesIn(std::vector<size_t> {64, 128, 256}), // hidden size
             ::testing::ValuesIn(std::vector<size_t> {0, 1}), // seq axis
             ::testing::ValuesIn(std::vector<float> {0.f}), // clip - not used
             ::testing::ValuesIn(std::vector<ngraph::helpers::TensorIteratorBody> {

@@ -30,34 +30,32 @@ namespace gpu {
 struct loop_gpu : typed_primitive_impl<loop> {
     const loop_node& node;
 
-    explicit loop_gpu(const loop_node& node) :
-        node(node) {}
+    explicit loop_gpu(const loop_node& node) : node(node) {}
 
-    static memory_impl::ptr get_outer_output_memory(loop_inst& instance, const primitive_id& external_id) {
+    static memory_impl::ptr get_outer_output_memory(const loop_inst& instance, const primitive_id& external_id) {
         if (external_id == instance.id()) {
+            // main output
             memory_impl& memory = instance.output_memory();
             return (memory_impl::ptr) &memory;
         } else {
+            // other primitives
             const auto outputPrim = instance.get_network().get_primitive(external_id);
-            if (!outputPrim) {
-                CLDNN_ERROR_MESSAGE(instance.id(), "loop primitive_map is incomplete");
-            }
             memory_impl& memory = outputPrim->output_memory();
-            return (memory_impl::ptr)&memory;
+            return (memory_impl::ptr) &memory;
         }
     }
 
-    std::vector<loop::primitive_mapping> find_primitive_mappings(const primitive_id& internal_id, const loop_inst& instance) {
-        const auto& input_primitive_map = instance.node.get_input_primitive_map();
-        const auto& output_primitive_map = instance.node.get_output_primitive_map();
+    std::vector<loop::primitive_mapping> find_primitive_mappings(const primitive_id& internal_id) {
+        const auto& input_mappings = node.get_input_mappings();
+        const auto& output_mappings = node.get_output_mappings();
 
         std::vector<loop::primitive_mapping> ret;
-        for (const auto& pm : input_primitive_map) {
+        for (const auto& pm : input_mappings) {
             if (pm.internal_id == internal_id) {
                 ret.push_back(pm);
             }
         }
-        for (const auto& pm : output_primitive_map) {
+        for (const auto& pm : output_mappings) {
             if (pm.internal_id == internal_id) {
                 ret.push_back(pm);
             }
@@ -82,21 +80,11 @@ struct loop_gpu : typed_primitive_impl<loop> {
         return {}; // not found
     }
 
-    static void set_primitive_memory(network_impl& network, const primitive_id& id, memory_impl& memory) {
-        std::shared_ptr<cldnn::primitive_inst> prim = network.get_primitive(id);
-        prim->set_output_memory(memory);
-    }
-
     void preprocess_output_memory(loop_inst& instance) {
-        //  - if axis = -1,
-        //      from_mem = to_mem
-        //  - if axis >= 0
-        //      from_mem != to_mem
-        //      iteration_elements(stride), offset => should be set
         auto& engine = instance.get_network().get_engine();
         auto& output_iteration_mem = instance.output_iteration_mem;
         auto body_network = instance.get_body_network();
-        const auto& output_primitive_map = node.get_output_primitive_map();
+        const auto& output_primitive_map = node.get_output_mappings();
         output_iteration_mem.reserve(output_primitive_map.size());
         for (size_t i = 0; i < output_primitive_map.size(); ++i) {
             const auto& primitive_map = output_primitive_map.at(i);
@@ -104,7 +92,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
             const primitive_id& internal_id = primitive_map.internal_id;
             if (primitive_map.axis < 0) {
                 memory_impl::ptr memory = get_outer_output_memory(instance, external_id);
-                set_primitive_memory(*body_network, internal_id, *memory);
+                set_output_data(*body_network, internal_id, *memory);
             } else {
                 memory_impl::ptr to_mem = get_outer_output_memory(instance, external_id);
                 auto output_prim = body_network->get_primitive(internal_id);
@@ -122,24 +110,21 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 const int stride = linear_size * primitive_map.stride;
                 const int start = primitive_map.start < 0? node.get_max_iteration() - 1: primitive_map.start;
                 const int offset = linear_size * start;
-                cldnn::loop_inst::slice_memory_binding memory_binding_info(
+                cldnn::loop_inst::sliced_memory_binding memory_binding_info(
                     primitive_map.internal_id, primitive_map.external_id,
-                    loop_inst::slice_memory_binding::BODY_TO_OUTER,
-                    to_mem, cropped_layout, linear_size, stride, offset);
-                memory_binding_info.sliced_mem = std::move(cropped_mems);
+                    to_mem, cropped_mems, linear_size, stride, offset);
                 memory_binding_info.from_prim = body_network->get_primitive(internal_id);
                 output_iteration_mem.push_back(memory_binding_info);
             }
         }
     }
 
-    void set_input_memory(loop_inst& instance) {
+    void preprocess_input_memory(loop_inst& instance) {
         auto& engine = instance.get_network().get_engine();
         auto& backedge_mem = instance.backedge_mem;
         auto& iteration_mem = instance.input_iteration_mem;
         auto body_network = instance.get_body_network();
-        const auto& input_primitive_map = node.get_input_primitive_map();
-        iteration_mem.reserve(input_primitive_map.size());
+        const auto& input_primitive_map = node.get_input_mappings();
         const int inputs_memory_count = instance.inputs_memory_count();
         for (int memory_num = 0; memory_num < inputs_memory_count; memory_num++) {
             const primitive_id& input_external_id = instance.dependencies().at(memory_num)->id();
@@ -159,23 +144,20 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 if (input_pm.axis >= 0) { // checks if it's a memory to iterate through
                     layout cropped_layout
                         = instance.get_body_network()->get_primitive(input_pm.internal_id)->output_memory().get_layout();
-                        const int max_iteration = node.get_max_iteration();
-                        std::vector<memory_impl::ptr> cropped_mems;
-                        cropped_mems.reserve(max_iteration);
-                        for (int i=0; i < max_iteration; ++i) {
-                            memory_impl::ptr croped_mem = engine.allocate_memory(cropped_layout, 0);
-                            cropped_mems.push_back(croped_mem);
-                        }
+                    const int max_iteration = node.get_max_iteration();
+                    std::vector<memory_impl::ptr> cropped_mems;
+                    cropped_mems.reserve(max_iteration);
+                    for (int i=0; i < max_iteration; ++i) {
+                        memory_impl::ptr croped_mem = engine.allocate_memory(cropped_layout, 0);
+                        cropped_mems.push_back(croped_mem);
+                    }
                     const int linear_size = static_cast<int>(cropped_layout.get_linear_size());
                     const int stride = linear_size * input_pm.stride;
                     const int start = input_pm.start < 0? node.get_max_iteration() - 1: input_pm.start;
                     const int offset = linear_size * start;
-                    loop_inst::slice_memory_binding memory_binding_info(
+                    loop_inst::sliced_memory_binding memory_binding_info(
                         input_pm.external_id, input_pm.internal_id,
-                        loop_inst::slice_memory_binding::OUTER_TO_BODY,
-                        (memory_impl::ptr)&memory, cropped_layout,
-                        linear_size, stride, offset);
-                    memory_binding_info.sliced_mem = std::move(cropped_mems);
+                        (memory_impl::ptr)&memory, cropped_mems, linear_size, stride, offset);
                     memory_binding_info.to_prim = body_network->get_primitive(input_pm.internal_id);
                     iteration_mem.push_back(memory_binding_info);
                 } else { // "normal" mem
@@ -205,7 +187,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
                                 if (output->id() != back_edge.from) {
                                     continue;
                                 }
-                                const auto output_primitive_mapping = find_primitive_mappings(back_edge.from, instance);
+                                const auto output_primitive_mapping = find_primitive_mappings(back_edge.from);
                                 if (output_primitive_mapping.empty()) {
                                     continue;
                                 }
@@ -329,10 +311,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         }
     }
 
-    event_impl::ptr execute_impl(const std::vector<event_impl::ptr>& events, loop_inst& instance) override {
-        // return execute_impl_orig(events, instance);
-        return execute_impl_opt(events, instance);
-    }
+
 
     void set_input_data(network_impl& body_network, const primitive_id& id, memory_impl& mem) {
         std::shared_ptr<primitive_inst> primitive_inst = body_network.get_primitive(id);
@@ -357,7 +336,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         output->set_output_memory(mem);
     }
 
-    event_impl::ptr execute_impl_opt(const std::vector<event_impl::ptr>& events, loop_inst& instance) {
+    event_impl::ptr execute_impl(const std::vector<event_impl::ptr>& events, loop_inst& instance) override {
         for (auto& e : events)
             e->wait();
         auto& outer_network = instance.get_network();
@@ -397,7 +376,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         // output memory must be set before input_memory to set backedge memory properly
         if (!instance.memroy_set) {
             preprocess_output_memory(instance);
-            set_input_memory(instance);
+            preprocess_input_memory(instance);
             instance.memroy_set = true;
         }
 
@@ -412,16 +391,12 @@ struct loop_gpu : typed_primitive_impl<loop> {
             // Copy & Set sliced input memory offset
             for (size_t i = 0; i < instance.input_iteration_mem.size(); ++i) {
                 const auto& cropped_mem_info = input_iteration_mem.at(i);
-                const auto from_mem = cropped_mem_info.concatenated_mem;
-                const auto to_mem = cropped_mem_info.sliced_mem.at(actual_iteration);
-                // copy input mem
-                const int offset = cropped_mem_info.initial_offset + cropped_mem_info.stride * actual_iteration;
-                copy_buffer(*from_mem, *to_mem, cropped_mem_info.iteration_elements, offset);
+                memory_impl::ptr mem = cropped_mem_info.copy_and_get_sliced_mem(actual_iteration);
                 // set input mem
                 if (actual_iteration == 0) {
-                    body_network->set_input_data(cropped_mem_info.to_id, *to_mem);
+                    body_network->set_input_data(cropped_mem_info.to_id, *mem);
                 } else {
-                    cropped_mem_info.to_prim->set_output_memory(*to_mem);
+                    cropped_mem_info.to_prim->set_output_memory(*mem);
                 }
             }
 
@@ -468,23 +443,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         // Concatenate sliced output to the outer network
         for (size_t i = 0; i < output_iteration_mem.size(); ++i) {
             const auto& cropped_mem_info = output_iteration_mem.at(i);
-            const auto& to_mem = cropped_mem_info.concatenated_mem;
-            const auto& cropped_mems = cropped_mem_info.sliced_mem;
-            int offset = cropped_mem_info.initial_offset;
-
-            const size_t bytes_per_element = data_type_traits::size_of(cropped_mems.front()->get_layout().data_type);
-            const size_t byte_size_to_copy = cropped_mem_info.iteration_elements * bytes_per_element;
-            mem_lock<uint8_t> to_lock{ to_mem };
-            for (int iter = 0; iter < actual_iteration; ++iter) {
-                const auto& from_mem = cropped_mems.at(iter);
-                assert(from_mem->get_layout().data_type == to_mem->get_layout().data_type);
-                const int output_offset = offset * bytes_per_element;
-                mem_lock<uint8_t> from_lock{ from_mem };
-                uint8_t* src = from_lock.data();
-                uint8_t* dst = to_lock.data() + output_offset;
-                std::copy(src, src + byte_size_to_copy, dst);
-                offset += cropped_mem_info.stride;
-            }
+            cropped_mem_info.copy_to_concatenated_mem();
         }
 
         const primitive_id& num_iteration_id = node.get_num_iteration_id();
@@ -494,111 +453,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
         dynamic_cast<cldnn::user_event*>(ev.get())->set();
         return ev;
     }
-
-    // event_impl::ptr execute_impl_orig(const std::vector<event_impl::ptr>& events, loop_inst& instance) {
-    //     BEGIN_PROFILE
-    //     for (auto& e : events)
-    //         e->wait();
-    //     auto& outer_network = instance.get_network();
-    //     const uint32_t& net_id = instance.get_network().get_id();
-    //     auto ev = outer_network.get_engine().create_user_event(net_id, false);
-    //     auto body_network = instance.get_body_network();
-
-    //     // read trip_count from outer network
-    //     const primitive_id& trip_count_id = node.get_trip_count_id();
-    //     memory_impl& trip_count_mem = outer_network.get_primitive(trip_count_id)->output_memory();
-    //     int64_t trip_count = read_int(trip_count_mem);
-    //     if (trip_count < 0) {
-    //         trip_count = std::numeric_limits<int64_t>::max(); // infinity loop
-    //     }
-
-    //     // read initial execution condition from outer network
-    //     const primitive_id& initial_execution_id = node.get_initial_execution_id();
-    //     memory_impl& initial_execution_mem = outer_network.get_primitive(initial_execution_id)->output_memory();
-    //     int64_t execution_condition = read_int(initial_execution_mem);
-
-    //     // shortcut of current_iteration memory in body network (slice of input)
-    //     memory_impl* current_iteration_mem = nullptr;
-    //     if (node.is_current_iteration_used()) {
-    //         const primitive_id& current_iteration_id = node.get_current_iteration_id();
-    //         current_iteration_mem = &body_network->get_primitive(current_iteration_id)->output_memory();
-    //     }
-
-
-    //     // shortcut of execution_condition memory in body network
-    //     memory_impl* execution_condition_mem = nullptr;
-    //     if (node.is_execution_condition_used()) {
-    //         const primitive_id& condition_id = node.get_condition_id();
-    //         execution_condition_mem = &body_network->get_primitive(condition_id)->output_memory();
-    //     }
-
-    //     // output memory must be set before input_memory to set backedge memory properly
-    //     if (!instance.memroy_set) {
-    //         preprocess_output_memory(instance);
-    //         set_input_memory(instance);
-    //         for (auto& backedge : instance.backedge_mem) {
-    //             // check input buffer != output buffer
-    //             if (!check_if_can_be_optimized(backedge, instance)) {
-    //                 continue;
-    //             }
-    //             body_network->set_input_data(backedge.to_id, *backedge.from_mem);
-    //             backedge.is_optimized = true;
-    //         }
-    //         instance.memroy_set = true;
-    //     } else {
-    //         instance.reset_memory_binding_offset();
-    //     }
-
-    //     int64_t current_iteration = 0;
-    //     if (node.is_current_iteration_used()) {
-    //         write_int(*current_iteration_mem, current_iteration);
-    //     }
-
-    //     const auto input_ids = body_network->get_input_ids();
-    //     const auto output_ids = body_network->get_output_ids();
-    //     while (current_iteration < trip_count && execution_condition) {
-    //         // copy input mem
-    //         for (auto& iter_mem : instance.input_iteration_mem) {
-    //             copy_buffer(*iter_mem.from_mem, *iter_mem.to_mem, iter_mem.iteration_elements, iter_mem.offset);
-    //             iter_mem.offset += iter_mem.stride;
-    //         }
-    //         body_network->execute(events);
-    //         body_network->reset_execution();
-
-    //         // copy output mem
-    //         for (auto& iter_mem : instance.output_iteration_mem) {
-    //             copy_buffer(*iter_mem.from_mem, *iter_mem.to_mem, iter_mem.iteration_elements, 0, iter_mem.offset);
-    //             iter_mem.offset += iter_mem.stride;
-    //         }
-
-    //         // update index & execution condition for the next iteration
-    //         if (node.is_current_iteration_used()) {
-    //             current_iteration = read_int(*current_iteration_mem);
-    //             ++current_iteration;
-    //             write_int(*current_iteration_mem, current_iteration);
-    //         } else {
-    //             ++current_iteration;
-    //         }
-    //         if (node.is_execution_condition_used()) {
-    //             execution_condition = read_int(*execution_condition_mem);
-    //         }
-
-    //         // copy back_edges
-    //         for (auto edge_mem_bind : instance.backedge_mem) {
-    //             if (!edge_mem_bind.is_optimized) {
-    //                 copy_entire_buffer(*edge_mem_bind.from_mem, *edge_mem_bind.to_mem);
-    //             }
-    //         }
-    //     }
-
-    //     const primitive_id& num_iteration_id = node.get_num_iteration_id();
-    //     memory_impl& num_iteration_mem = outer_network.get_primitive(num_iteration_id)->output_memory();
-    //     write_int(num_iteration_mem, current_iteration);
-
-    //     dynamic_cast<cldnn::user_event*>(ev.get())->set();
-    //     END_PROFILE
-    //     return ev;
-    // }
 
     static primitive_impl* create(const loop_node& arg) { return new loop_gpu(arg); }
 };

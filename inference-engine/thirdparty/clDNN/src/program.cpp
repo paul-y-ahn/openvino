@@ -484,6 +484,7 @@ void program_impl::post_optimize_graph(bool is_internal) {
     if (options.get<build_option_type::optimize_data>()->enabled())
         apply_opt_pass<remove_redundant_reorders>(lo, false, true, true);  // pass to remove output reorders while all others graph optimizations were done
 
+    // update loop primitive_map
     apply_opt_pass<update_loop_primitive_map>();
 }
 
