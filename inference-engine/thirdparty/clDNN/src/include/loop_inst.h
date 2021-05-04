@@ -301,37 +301,37 @@ public:
         bool is_optimized;
     };
 
-    struct external_memory_binding {
-        external_memory_binding(const primitive_id& from_id,
+    struct slice_memory_binding {
+        enum CopyDirection {
+            OUTER_TO_BODY,
+            BODY_TO_OUTER,
+        };
+        slice_memory_binding(const primitive_id& from_id,
                                 const primitive_id& to_id,
-                                memory_impl::ptr from_mem,
-                                memory_impl::ptr to_mem,
+                                CopyDirection direction,
+                                memory_impl::ptr concatenated_mem,
+                                std::reference_wrapper<std::vector<memory_impl::ptr>> sliced_mem,
                                 layout cropped_layout,
                                 int iteration_elements = 0,
                                 int stride = 0,
-                                int offset = 0,
                                 int initial_offset = 0) :
             from_id(from_id),
             to_id(to_id),
-            from_mem(from_mem),
-            to_mem(to_mem),
+            direction(direction),
+            concatenated_mem(concatenated_mem),
+            sliced_mem(sliced_mem),
             cropped_layout(cropped_layout),
             iteration_elements(iteration_elements),
             stride(stride),
-            offset(offset),
-            initial_offset(initial_offset) {}
-        int get_byte_offset() const {
-            const int elem_size = data_type_traits::size_of(cropped_layout.data_type);
-            return elem_size * offset;
-        }
+            initial_offset(initial_offset) { }
         primitive_id from_id;
         primitive_id to_id;
-        memory_impl::ptr from_mem;
-        memory_impl::ptr to_mem;
+        CopyDirection direction;
+        memory_impl::ptr concatenated_mem;
+        std::reference_wrapper<std::vector<memory_impl::ptr>> sliced_mem;
         layout cropped_layout;
         int iteration_elements;
         int stride;
-        int offset;
         int initial_offset;
     };
 
@@ -339,17 +339,8 @@ public:
     static std::string to_string(const loop_node& node);
     bool memroy_set;
     std::vector<backedge_memory_binding> backedge_mem;
-    std::vector<external_memory_binding> input_iteration_mem;
-    std::vector<external_memory_binding> output_iteration_mem;
-
-    void reset_memory_binding_offset() {
-        for (auto& binding : input_iteration_mem) {
-            binding.offset = binding.initial_offset;
-        }
-        for (auto& binding : output_iteration_mem) {
-            binding.offset = binding.initial_offset;
-        }
-    }
+    std::vector<slice_memory_binding> input_iteration_mem;
+    std::vector<slice_memory_binding> output_iteration_mem;
 
 public:
     typed_primitive_inst(network_impl& network, const loop_node& node);
