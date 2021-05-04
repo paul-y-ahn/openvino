@@ -293,12 +293,22 @@ class typed_primitive_inst<loop> : public typed_primitive_inst_base<loop> {
 
 public:
     struct backedge_memory_binding {
-        memory_impl* from_mem;
-        memory_impl* to_mem;
-        memory_impl::ptr backup;
-        primitive_id from_id;
-        primitive_id to_id;
-        bool is_optimized;
+        std::shared_ptr<primitive_inst> to_primitive;
+        std::vector<memory_impl::ptr> from_mems;
+        memory_impl::ptr initial_mem;
+        backedge_memory_binding(std::shared_ptr<primitive_inst> to_primitive, memory_impl::ptr initial_mem):
+            to_primitive(to_primitive),
+            initial_mem(initial_mem) {}
+        void add_backedge_from_mem(memory_impl::ptr from_mem) {
+            from_mems.push_back(from_mem);
+        }
+        void set_backedged_input(int i) {
+            if (i == 0) {
+                to_primitive->set_output_memory(*initial_mem);
+            } else {
+                to_primitive->set_output_memory(*from_mems.at(i-1));
+            }
+        }
     };
 
     struct slice_memory_binding {
@@ -310,7 +320,6 @@ public:
                                 const primitive_id& to_id,
                                 CopyDirection direction,
                                 memory_impl::ptr concatenated_mem,
-                                std::reference_wrapper<std::vector<memory_impl::ptr>> sliced_mem,
                                 layout cropped_layout,
                                 int iteration_elements = 0,
                                 int stride = 0,
@@ -319,7 +328,6 @@ public:
             to_id(to_id),
             direction(direction),
             concatenated_mem(concatenated_mem),
-            sliced_mem(sliced_mem),
             cropped_layout(cropped_layout),
             iteration_elements(iteration_elements),
             stride(stride),
@@ -328,11 +336,13 @@ public:
         primitive_id to_id;
         CopyDirection direction;
         memory_impl::ptr concatenated_mem;
-        std::reference_wrapper<std::vector<memory_impl::ptr>> sliced_mem;
+        std::vector<memory_impl::ptr> sliced_mem;
         layout cropped_layout;
         int iteration_elements;
         int stride;
         int initial_offset;
+        std::shared_ptr<primitive_inst> from_prim;
+        std::shared_ptr<primitive_inst> to_prim;
     };
 
     static layout calc_output_layout(const loop_node& node);

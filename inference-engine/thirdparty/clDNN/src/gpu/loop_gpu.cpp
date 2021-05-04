@@ -24,9 +24,6 @@
 #include "memory_impl.h"
 #include <vector>
 #include <algorithm>
-#include <fstream>
-#include <chrono>
-#include <iomanip>
 
 namespace cldnn {
 namespace gpu {
@@ -35,34 +32,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
 
     explicit loop_gpu(const loop_node& node) :
         node(node) {}
-
-    // helpers
-    static bool check_if_can_be_optimized(const loop_inst::backedge_memory_binding& backedge, const loop_inst& instance) {
-        // cannot optimized if input memory == output memory
-        const auto from = instance.get_body_network()->get_primitive(backedge.from_id);
-        const auto to = instance.get_body_network()->get_primitive(backedge.to_id);
-        if (from->output_memory().get_layout() != to->output_memory().get_layout()) {
-            return false;
-        }
-
-        // cannot be optimized if dependency has the same memory as backedge.to_mem
-        {
-            mem_lock<void> input_mem{ *backedge.to_mem };
-            for (const auto dep : from->dependencies()) {
-                mem_lock<void> output_mem{ from->output_memory() };
-                if (output_mem.data() == input_mem.data()) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    // memory pools
-    std::vector<std::vector<memory_impl::ptr>> cropped_input_mem_pool;
-    std::vector<std::vector<memory_impl::ptr>> cropped_output_mem_pool;
-    std::vector<std::shared_ptr<primitive_inst>> body_input_primitives;
-    std::vector<std::shared_ptr<primitive_inst>> body_output_primitives;
 
     static memory_impl::ptr get_outer_output_memory(loop_inst& instance, const primitive_id& external_id) {
         if (external_id == instance.id()) {
@@ -76,6 +45,41 @@ struct loop_gpu : typed_primitive_impl<loop> {
             memory_impl& memory = outputPrim->output_memory();
             return (memory_impl::ptr)&memory;
         }
+    }
+
+    std::vector<loop::primitive_mapping> find_primitive_mappings(const primitive_id& internal_id, const loop_inst& instance) {
+        const auto& input_primitive_map = instance.node.get_input_primitive_map();
+        const auto& output_primitive_map = instance.node.get_output_primitive_map();
+
+        std::vector<loop::primitive_mapping> ret;
+        for (const auto& pm : input_primitive_map) {
+            if (pm.internal_id == internal_id) {
+                ret.push_back(pm);
+            }
+        }
+        for (const auto& pm : output_primitive_map) {
+            if (pm.internal_id == internal_id) {
+                ret.push_back(pm);
+            }
+        }
+
+        return ret;
+    }
+
+    std::vector<memory_impl::ptr> find_cropped_mem(const primitive_id& internal_id, const loop_inst& instance) {
+        const auto& input_iteration_mem = instance.input_iteration_mem;
+        for (const auto& iter_info : input_iteration_mem) {
+            if (iter_info.to_id == internal_id) {
+                return iter_info.sliced_mem;
+            }
+        }
+        const auto& output_iteration_mem = instance.output_iteration_mem;
+        for (const auto& iter_info : output_iteration_mem) {
+            if (iter_info.from_id == internal_id) {
+                return iter_info.sliced_mem;
+            }
+        }
+        return {}; // not found
     }
 
     static void set_primitive_memory(network_impl& network, const primitive_id& id, memory_impl& memory) {
@@ -94,7 +98,8 @@ struct loop_gpu : typed_primitive_impl<loop> {
         auto body_network = instance.get_body_network();
         const auto& output_primitive_map = node.get_output_primitive_map();
         output_iteration_mem.reserve(output_primitive_map.size());
-        for (const auto& primitive_map : output_primitive_map) {
+        for (size_t i = 0; i < output_primitive_map.size(); ++i) {
+            const auto& primitive_map = output_primitive_map.at(i);
             const primitive_id& external_id = primitive_map.external_id;
             const primitive_id& internal_id = primitive_map.internal_id;
             if (primitive_map.axis < 0) {
@@ -103,26 +108,27 @@ struct loop_gpu : typed_primitive_impl<loop> {
             } else {
                 memory_impl::ptr to_mem = get_outer_output_memory(instance, external_id);
                 auto output_prim = body_network->get_primitive(internal_id);
-                layout croped_layout = output_prim->output_memory().get_layout();
+                layout cropped_layout = output_prim->output_memory().get_layout();
 
                 const int max_iteration = node.get_max_iteration();
                 std::vector<memory_impl::ptr> cropped_mems;
                 cropped_mems.reserve(max_iteration);
                 for (int i=0; i < max_iteration; ++i) {
-                    memory_impl::ptr croped_mem = engine.allocate_memory(croped_layout, body_network->get_id(), false);
+                    memory_impl::ptr croped_mem = engine.allocate_memory(cropped_layout, 0);
                     cropped_mems.push_back(croped_mem);
                 }
-                cropped_output_mem_pool.push_back(std::move(cropped_mems));
-                body_output_primitives.push_back(body_network->get_primitive(internal_id));
-                const int linear_size = static_cast<int>(croped_layout.get_linear_size());
+
+                const int linear_size = static_cast<int>(cropped_layout.get_linear_size());
                 const int stride = linear_size * primitive_map.stride;
                 const int start = primitive_map.start < 0? node.get_max_iteration() - 1: primitive_map.start;
                 const int offset = linear_size * start;
-                output_iteration_mem.emplace_back(
+                cldnn::loop_inst::slice_memory_binding memory_binding_info(
                     primitive_map.internal_id, primitive_map.external_id,
                     loop_inst::slice_memory_binding::BODY_TO_OUTER,
-                    to_mem, std::ref(cropped_output_mem_pool.back()),
-                    croped_layout, linear_size, stride, offset);
+                    to_mem, cropped_layout, linear_size, stride, offset);
+                memory_binding_info.sliced_mem = std::move(cropped_mems);
+                memory_binding_info.from_prim = body_network->get_primitive(internal_id);
+                output_iteration_mem.push_back(memory_binding_info);
             }
         }
     }
@@ -146,33 +152,32 @@ struct loop_gpu : typed_primitive_impl<loop> {
             if (input_pm_ptrs.size() == 0) {
                 CLDNN_ERROR_MESSAGE(instance.id(), "loop primitive_map is incomplete");
             }
-            for (const loop::primitive_mapping * input_pm_ptr : input_pm_ptrs) {
-                const auto& input_pm = *input_pm_ptr;
+            for (size_t i = 0; i < input_pm_ptrs.size(); ++i) {
+                const auto& input_pm = *input_pm_ptrs.at(i);
 
                 // handle memory
                 if (input_pm.axis >= 0) { // checks if it's a memory to iterate through
-                    layout croped_layout
+                    layout cropped_layout
                         = instance.get_body_network()->get_primitive(input_pm.internal_id)->output_memory().get_layout();
-                    {
                         const int max_iteration = node.get_max_iteration();
                         std::vector<memory_impl::ptr> cropped_mems;
                         cropped_mems.reserve(max_iteration);
                         for (int i=0; i < max_iteration; ++i) {
-                            memory_impl::ptr croped_mem = engine.allocate_memory(croped_layout, body_network->get_id(), false);
+                            memory_impl::ptr croped_mem = engine.allocate_memory(cropped_layout, 0);
                             cropped_mems.push_back(croped_mem);
                         }
-                        cropped_input_mem_pool.push_back(std::move(cropped_mems));
-                    }
-                    body_input_primitives.push_back(body_network->get_primitive(input_pm.internal_id));
-                    const int linear_size = static_cast<int>(croped_layout.get_linear_size());
+                    const int linear_size = static_cast<int>(cropped_layout.get_linear_size());
                     const int stride = linear_size * input_pm.stride;
                     const int start = input_pm.start < 0? node.get_max_iteration() - 1: input_pm.start;
                     const int offset = linear_size * start;
-                    iteration_mem.emplace_back(
+                    loop_inst::slice_memory_binding memory_binding_info(
                         input_pm.external_id, input_pm.internal_id,
                         loop_inst::slice_memory_binding::OUTER_TO_BODY,
-                        (memory_impl::ptr)&memory, std::ref(cropped_input_mem_pool.back()),
-                        croped_layout, linear_size, stride, offset);
+                        (memory_impl::ptr)&memory, cropped_layout,
+                        linear_size, stride, offset);
+                    memory_binding_info.sliced_mem = std::move(cropped_mems);
+                    memory_binding_info.to_prim = body_network->get_primitive(input_pm.internal_id);
+                    iteration_mem.push_back(memory_binding_info);
                 } else { // "normal" mem
                     if (memory.get_layout().data_type != body_network->get_primitive(input_pm.internal_id)->output_memory().get_layout().data_type) {
                         CLDNN_ERROR_MESSAGE(instance.id(), "incompatible datatypes");
@@ -182,7 +187,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
 
                 // checking if memory is a destination of a backedge
                 const auto& back_edges = node.get_back_edges();
-                for (const auto& back_edge : back_edges) { //todo: what if node is both input & output?
+                for (const auto& back_edge : back_edges) {
                     if (input_pm.internal_id != back_edge.to) {
                         continue;
                     }
@@ -191,19 +196,34 @@ struct loop_gpu : typed_primitive_impl<loop> {
                         if (body_output->id() != back_edge.from) {
                             continue;
                         }
-                        loop_inst::backedge_memory_binding mem_bind;
-                        mem_bind.from_mem = &body_network->get_primitive(back_edge.from)->output_memory();
-                        mem_bind.to_mem = &body_network->get_primitive(back_edge.to)->output_memory();
-                        mem_bind.from_id = back_edge.from;
-                        mem_bind.to_id = back_edge.to;
-                        mem_bind.is_optimized = false;
-                        if (mem_bind.to_mem->get_layout().data_type != mem_bind.to_mem->get_layout().data_type) {
-                            CLDNN_ERROR_MESSAGE(instance.id(), "incompatible datatypes");
-                        }
+                        const int max_iteration = node.get_max_iteration();
+                        auto from_mems = find_cropped_mem(back_edge.from, instance);
+                        if (from_mems.empty()) { // backedge output which does not need concatenation
+                            // input memory = output memory = loop output memory
+                            memory_impl::ptr loop_input_mem = get_outer_output_memory(instance, input_pm.external_id);
+                            for (auto& output : body_network->get_outputs()) {
+                                if (output->id() != back_edge.from) {
+                                    continue;
+                                }
+                                const auto output_primitive_mapping = find_primitive_mappings(back_edge.from, instance);
+                                if (output_primitive_mapping.empty()) {
+                                    continue;
+                                }
+                                memory_impl::ptr loop_output_mem = get_outer_output_memory(instance, output_primitive_mapping.front().external_id);
+                                body_network->set_input_data(back_edge.to, *loop_output_mem);
+                                body_network->set_output_memory(back_edge.from, *loop_output_mem);
+                                copy_buffer(*loop_input_mem, *loop_output_mem, loop_input_mem->get_layout().count());
+                                break;
+                            }
 
-                        copy_entire_buffer(*mem_bind.to_mem, *mem_bind.from_mem);
-                        backedge_mem.push_back(mem_bind);
-                        break;
+                        } else {
+                            memory_impl::ptr initial_mem = get_outer_output_memory(instance, input_pm.external_id);
+                            backedge_mem.emplace_back(body_output, initial_mem);
+                            for (int i = 0 ; i < max_iteration; ++i) {
+                                memory_impl::ptr from_mem = from_mems.at(i);
+                                backedge_mem.back().add_backedge_from_mem(from_mem);
+                            }
+                        }
                     }
                 }
             }
@@ -378,14 +398,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
         if (!instance.memroy_set) {
             preprocess_output_memory(instance);
             set_input_memory(instance);
-            for (auto& backedge : instance.backedge_mem) {
-                // check input buffer != output buffer
-                if (!check_if_can_be_optimized(backedge, instance)) {
-                    continue;
-                }
-                body_network->set_input_data(backedge.to_id, *backedge.from_mem);
-                backedge.is_optimized = true;
-            }
             instance.memroy_set = true;
         }
 
@@ -401,7 +413,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
             for (size_t i = 0; i < instance.input_iteration_mem.size(); ++i) {
                 const auto& cropped_mem_info = input_iteration_mem.at(i);
                 const auto from_mem = cropped_mem_info.concatenated_mem;
-                const auto to_mem = cropped_input_mem_pool.at(i).at(actual_iteration);
+                const auto to_mem = cropped_mem_info.sliced_mem.at(actual_iteration);
                 // copy input mem
                 const int offset = cropped_mem_info.initial_offset + cropped_mem_info.stride * actual_iteration;
                 copy_buffer(*from_mem, *to_mem, cropped_mem_info.iteration_elements, offset);
@@ -409,31 +421,34 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 if (actual_iteration == 0) {
                     body_network->set_input_data(cropped_mem_info.to_id, *to_mem);
                 } else {
-                    body_input_primitives.at(i)->set_output_memory(*to_mem);
+                    cropped_mem_info.to_prim->set_output_memory(*to_mem);
                 }
             }
+
+            // Set backedged input
+            if (actual_iteration == 0) {
+                for (auto& edge_mem_bind : instance.backedge_mem) {
+                    const primitive_id& input_id = edge_mem_bind.to_primitive->id();
+                    body_network->set_input_data(input_id, *edge_mem_bind.initial_mem);
+                }
+            } else {
+                for (auto& edge_mem_bind : instance.backedge_mem) {
+                    edge_mem_bind.set_backedged_input(actual_iteration);
+                }
+            }
+
             // Set sliced output memory offset
             for (size_t i = 0; i < output_iteration_mem.size(); ++i) {
-                const auto& from_mem = cropped_output_mem_pool.at(i).at(actual_iteration);
-                body_output_primitives.at(i)->set_output_memory(*from_mem);
+                const auto& cropped_mem_info = output_iteration_mem.at(i);
+                const auto& from_mem = cropped_mem_info.sliced_mem.at(actual_iteration);
+                cropped_mem_info.from_prim->set_output_memory(*from_mem);
             }
             if (actual_iteration == 0) {
                 body_network->execute(events);
             } else {
                 body_network->execute({});
             }
-            // Concatenate sliced output to the outer network
-            if (actual_iteration > 0) {
-                for (size_t i = 0; i < output_iteration_mem.size(); ++i) {
-                    const auto& cropped_mem_info = output_iteration_mem.at(i);
-                    const auto& to_mem = cropped_mem_info.concatenated_mem;
-                    const int iter = actual_iteration - 1; // copy previous iteration output
-                    const int offset = cropped_mem_info.initial_offset + cropped_mem_info.stride * iter;
-                    const auto& cropped_mems = cropped_output_mem_pool.at(i);
-                    const auto& from_mem = cropped_mems.at(iter);
-                    copy_buffer(*from_mem, *to_mem, cropped_mem_info.iteration_elements, 0, offset);
-                }
-            }
+
 
             // update index & execution condition for the next iteration
             if (node.is_current_iteration_used()) {
@@ -446,26 +461,30 @@ struct loop_gpu : typed_primitive_impl<loop> {
             if (node.is_execution_condition_used()) {
                 execution_condition = read_int(*execution_condition_mem);
             }
-
-            // copy back_edges
-            for (auto edge_mem_bind : instance.backedge_mem) {
-                if (!edge_mem_bind.is_optimized) {
-                    copy_entire_buffer(*edge_mem_bind.from_mem, *edge_mem_bind.to_mem);
-                }
-            }
             ++actual_iteration;
         }
         body_network->reset_execution();
 
-        // copy last copy
+        // Concatenate sliced output to the outer network
         for (size_t i = 0; i < output_iteration_mem.size(); ++i) {
             const auto& cropped_mem_info = output_iteration_mem.at(i);
             const auto& to_mem = cropped_mem_info.concatenated_mem;
-            const int iter = actual_iteration - 1; // copy previous iteration output
-            const int offset = cropped_mem_info.initial_offset + cropped_mem_info.stride * iter;
-            const auto& cropped_mems = cropped_output_mem_pool.at(i);
-            const auto& from_mem = cropped_mems.at(iter);
-            copy_buffer(*from_mem, *to_mem, cropped_mem_info.iteration_elements, 0, offset);
+            const auto& cropped_mems = cropped_mem_info.sliced_mem;
+            int offset = cropped_mem_info.initial_offset;
+
+            const size_t bytes_per_element = data_type_traits::size_of(cropped_mems.front()->get_layout().data_type);
+            const size_t byte_size_to_copy = cropped_mem_info.iteration_elements * bytes_per_element;
+            mem_lock<uint8_t> to_lock{ to_mem };
+            for (int iter = 0; iter < actual_iteration; ++iter) {
+                const auto& from_mem = cropped_mems.at(iter);
+                assert(from_mem->get_layout().data_type == to_mem->get_layout().data_type);
+                const int output_offset = offset * bytes_per_element;
+                mem_lock<uint8_t> from_lock{ from_mem };
+                uint8_t* src = from_lock.data();
+                uint8_t* dst = to_lock.data() + output_offset;
+                std::copy(src, src + byte_size_to_copy, dst);
+                offset += cropped_mem_info.stride;
+            }
         }
 
         const primitive_id& num_iteration_id = node.get_num_iteration_id();
