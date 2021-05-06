@@ -57,8 +57,8 @@ TEST(loop_gpu, basic_no_concat)
         eltwise("eltwise", "input", "eltwise_operand", eltwise_mode::sum)
     );
 
-    std::vector<loop::primitive_mapping> input_mappings { loop::primitive_mapping("input", "input", 2) };
-    std::vector<loop::primitive_mapping> output_mappings { loop::primitive_mapping("loop", "eltwise", 2) };
+    std::vector<loop::primitive_mapping> input_mappings { loop::primitive_mapping("input", "input") };
+    std::vector<loop::primitive_mapping> output_mappings { loop::primitive_mapping("loop", "eltwise") };
 
     std::vector<loop::backedge_mapping> back_edges {
         loop::backedge_mapping("eltwise", "input")

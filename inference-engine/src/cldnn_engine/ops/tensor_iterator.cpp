@@ -14,6 +14,7 @@
 
 #include "api/loop.hpp"
 #include "api/mutable_data.hpp"
+#include "api/data.hpp"
 #include "api/reorder.hpp"
 
 #include <vector>
@@ -23,7 +24,8 @@ using TensorIterator = ngraph::op::v0::TensorIterator;
 
 namespace CLDNNPlugin {
 
-static cldnn::mutable_data CreateIntData(Program &p, const cldnn::primitive_id& id, int32_t num) {
+template<class DATA_TYPE>
+static DATA_TYPE CreateIntData(Program &p, const cldnn::primitive_id& id, int32_t num) {
     auto mem = cldnn::memory::allocate(p.GetEngine(),
         { cldnn::data_types::i32, cldnn::format::bfyx, { 1, 1, 1, 1 } });
     auto ptr = mem.pointer<int32_t>();
@@ -31,7 +33,7 @@ static cldnn::mutable_data CreateIntData(Program &p, const cldnn::primitive_id& 
     return {id, mem};
 }
 
-static cldnn::mutable_data CreateOutputData(Program &p, const std::shared_ptr<ngraph::Node>& op,
+static cldnn::mutable_data CreateOutputMutableData(Program &p, const std::shared_ptr<ngraph::Node>& op,
                                             const cldnn::primitive_id& id, const cldnn::primitive_id& input,
                                             const int32_t output_idx) {
     const auto precision = DataTypeFromPrecision(op->get_output_element_type(output_idx));
@@ -53,10 +55,9 @@ static void UpdateBackedge(std::vector<cldnn::loop::backedge_mapping>& back_edge
 }
 
 void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &op) {
-    // loop can takes multiple inputs, no p.ValidateInputs()
     auto inputPrimitives = p.GetInputPrimitiveIDs(op);
 
-    // set body topology
+    // get body topology from ngraph function
     InferenceEngine::CNNNetwork body_network(op->get_body());
     Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), false);
     auto body_topology = *body_program.GetTopology();
@@ -84,7 +85,6 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
             input_mappings.emplace_back(external_id, internal_id, sliceInfo->m_axis,
                 sliceInfo->m_start, sliceInfo->m_end, sliceInfo->m_stride);
         } else {
-            // InvariantInputDescription or InputDescription
             // input without slicing
             input_mappings.emplace_back(external_id, internal_id);
         }
@@ -108,7 +108,7 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
     const int64_t num_iterations = op->get_num_iterations();
     assert(num_iterations >= 0);
     {
-        cldnn::mutable_data trip_count = CreateIntData(p, trip_count_id, num_iterations);
+        cldnn::data trip_count = CreateIntData<cldnn::data>(p, trip_count_id, num_iterations);
         p.primitivesToIRLayersMap[trip_count_id] = { op->get_friendly_name() };
         p.primitiveIDs[trip_count_id] = trip_count_id;
         p.AddPrimitive(trip_count);
@@ -116,7 +116,7 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
     }
     const cldnn::primitive_id execution_condition_id = layerName + "_initialExecutionCondition";
     {
-        cldnn::mutable_data execution_condition = CreateIntData(p, execution_condition_id, 1);
+        cldnn::mutable_data execution_condition = CreateIntData<cldnn::mutable_data>(p, execution_condition_id, 1);
         p.primitivesToIRLayersMap[execution_condition_id] = { op->get_friendly_name() };
         p.primitiveIDs[execution_condition_id] = execution_condition_id;
         p.AddPrimitive(execution_condition);
@@ -124,7 +124,7 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
     }
     const cldnn::primitive_id num_iteration_id = layerName + "_numIteration";
     {
-        cldnn::mutable_data num_iteration = CreateIntData(p, num_iteration_id, 0);
+        cldnn::mutable_data num_iteration = CreateIntData<cldnn::mutable_data>(p, num_iteration_id, 0);
         p.primitivesToIRLayersMap[num_iteration_id] = { op->get_friendly_name() };
         p.primitiveIDs[num_iteration_id] = num_iteration_id;
         p.AddPrimitive(num_iteration);
@@ -138,11 +138,11 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
 
         // Add additional mutable_data for multiple outputs
         // primitive ID should be <TI primitive ID>.<output_idx> if output_idx > 0
-        // other wise primitive ID should be equals to TI primitive ID
+        // otherwise primitive ID should be equals to TI primitive ID
         const std::string layerNameWithIndex = layerName + "." + std::to_string(output_idx);
         std::string external_id;
         if (output_idx > 0) {
-            cldnn::mutable_data output_data = CreateOutputData(p, op, layerNameWithIndex, layerName, output_idx);
+            cldnn::mutable_data output_data = CreateOutputMutableData(p, op, layerNameWithIndex, layerName, output_idx);
             p.primitiveIDs[layerNameWithIndex] = layerNameWithIndex;
             p.AddPrimitive(output_data);
             p.AddInnerPrimitiveToProfiler(layerNameWithIndex, layerName, op);

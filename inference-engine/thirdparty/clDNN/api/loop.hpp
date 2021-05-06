@@ -17,7 +17,6 @@ namespace cldnn {
 /// @addtogroup cpp_primitives Primitives
 /// @{
 
-// TODO(cldnn loop): update example code
 /// @brief Adds primitive which performs recurrent execution of the topology.
 ///
 /// @details
