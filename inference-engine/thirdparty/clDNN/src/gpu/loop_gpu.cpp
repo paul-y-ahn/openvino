@@ -92,7 +92,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
             const primitive_id& internal_id = primitive_map.internal_id;
             if (primitive_map.axis < 0) {
                 memory_impl::ptr memory = get_outer_output_memory(instance, external_id);
-                set_output_data(*body_network, internal_id, *memory);
+                body_network->get_primitive(internal_id)->set_output_memory(*memory);
             } else {
                 memory_impl::ptr to_mem = get_outer_output_memory(instance, external_id);
                 auto output_prim = body_network->get_primitive(internal_id);
@@ -309,31 +309,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
         default:
             assert(false);
         }
-    }
-
-
-
-    void set_input_data(network_impl& body_network, const primitive_id& id, memory_impl& mem) {
-        std::shared_ptr<primitive_inst> primitive_inst = body_network.get_primitive(id);
-        if (primitive_inst == nullptr)
-            throw std::runtime_error("topology doesn't contain primitive:" + id);
-        if (primitive_inst->type() != input_layout::type_id()) {
-            CLDNN_ERROR_MESSAGE(id, "primitive " + id + " is not an input");
-        }
-
-        auto input = std::static_pointer_cast<input_layout_inst>(primitive_inst);
-        input->set_data(mem);
-    }
-
-    void set_output_data(network_impl& body_network, const primitive_id& id, memory_impl& mem) {
-        std::shared_ptr<primitive_inst> primitive_inst = body_network.get_primitive(id);
-        if (primitive_inst == nullptr)
-            throw std::runtime_error("topology doesn't contain primitive:" + id);
-        if (!primitive_inst->is_output()) {
-            CLDNN_ERROR_MESSAGE(id, "primitive " + id + " is not an output");
-        }
-        auto output = std::static_pointer_cast<input_layout_inst>(primitive_inst);
-        output->set_output_memory(mem);
     }
 
     event_impl::ptr execute_impl(const std::vector<event_impl::ptr>& events, loop_inst& instance) override {

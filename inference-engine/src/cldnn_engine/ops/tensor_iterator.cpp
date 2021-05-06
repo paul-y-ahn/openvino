@@ -33,7 +33,7 @@ static DATA_TYPE CreateIntData(Program &p, const cldnn::primitive_id& id, int32_
     return {id, mem};
 }
 
-static cldnn::mutable_data CreateOutputMutableData(Program &p, const std::shared_ptr<ngraph::Node>& op,
+static cldnn::mutable_data CreateAdditionalOutputData(Program &p, const std::shared_ptr<ngraph::Node>& op,
                                             const cldnn::primitive_id& id, const cldnn::primitive_id& input,
                                             const int32_t output_idx) {
     const auto precision = DataTypeFromPrecision(op->get_output_element_type(output_idx));
@@ -59,7 +59,7 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
 
     // get body topology from ngraph function
     InferenceEngine::CNNNetwork body_network(op->get_body());
-    Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), false);
+    Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), true);
     auto body_topology = *body_program.GetTopology();
 
     // setup input_mappings/ output_mappings and back_edges
@@ -142,10 +142,10 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
         const std::string layerNameWithIndex = layerName + "." + std::to_string(output_idx);
         std::string external_id;
         if (output_idx > 0) {
-            cldnn::mutable_data output_data = CreateOutputMutableData(p, op, layerNameWithIndex, layerName, output_idx);
-            p.primitiveIDs[layerNameWithIndex] = layerNameWithIndex;
+            cldnn::mutable_data output_data = CreateAdditionalOutputData(p, op, layerNameWithIndex, layerName, output_idx);
             p.AddPrimitive(output_data);
             p.AddInnerPrimitiveToProfiler(layerNameWithIndex, layerName, op);
+            p.primitiveIDs[layerNameWithIndex] = layerNameWithIndex;
             external_id = layerNameWithIndex;
         } else {
             p.primitiveIDs[layerNameWithIndex] = layerName;
