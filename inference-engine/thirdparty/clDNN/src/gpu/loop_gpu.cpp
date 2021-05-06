@@ -362,6 +362,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         const auto& input_iteration_mem = instance.input_iteration_mem;
         const auto& output_iteration_mem = instance.output_iteration_mem;
         int actual_iteration = 0;
+        std::vector<event_impl::ptr> body_events;
         while (current_iteration < trip_count && execution_condition) {
             // Copy & Set sliced input memory offset
             for (size_t i = 0; i < instance.input_iteration_mem.size(); ++i) {
@@ -396,7 +397,12 @@ struct loop_gpu : typed_primitive_impl<loop> {
             if (actual_iteration == 0) {
                 body_network->execute(events);
             } else {
-                body_network->execute({});
+                body_events.clear();
+                for (const auto& backedge : node.get_back_edges()) {
+                    event_impl::ptr body_event = body_network->get_primitive_event(backedge.from);
+                    body_events.emplace_back(body_event);
+                }
+                body_network->execute(body_events);
             }
 
 
