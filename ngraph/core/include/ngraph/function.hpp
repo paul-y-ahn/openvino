@@ -185,6 +185,9 @@ namespace ngraph
         /// \param param Parameter node to delete
         void remove_parameter(const std::shared_ptr<op::Parameter>& param);
 
+        void set_is_body_net(bool is_body_net) { m_is_body_network = is_body_net; }
+        bool get_is_body_net() { return m_is_body_network;}
+
     private:
         Function(const Function&) = delete;
         Function(const Function&&) = delete;
@@ -204,6 +207,8 @@ namespace ngraph
         // These nodes are not outputs of graph but should not be removed even if have no children.
         SinkVector m_sinks;
         ParameterVector m_parameters;
+
+        bool m_is_body_network;
     };
 
     template <>

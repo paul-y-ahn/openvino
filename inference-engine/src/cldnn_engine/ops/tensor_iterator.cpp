@@ -58,6 +58,7 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
     auto inputPrimitives = p.GetInputPrimitiveIDs(op);
 
     // get body topology from ngraph function
+    op->get_body()->set_is_body_net(true);
     InferenceEngine::CNNNetwork body_network(op->get_body());
     Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), true);
     auto body_topology = *body_program.GetTopology();
@@ -155,15 +156,14 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
         const auto& body_output = body_outputs.at(loop_output_desc->m_body_value_index);
         cldnn::primitive_id internal_id = layer_type_name_ID(body_output);
 
-        // TODO(eunsoo): reorder required?
-        // add additional reorder in case TI output type != body output type
-        const auto& ti_output_type = ti_outputs.at(output_idx).get_element_type();
-        cldnn::primitive_id new_internal_id = internal_id + "_reorder";
-        const auto new_body_output_type = DataTypeFromPrecision(ti_output_type);
-        auto reorderPrim = cldnn::reorder(new_internal_id, internal_id, cldnn::format::any, new_body_output_type);
-        body_topology.add(reorderPrim);
-        UpdateBackedge(back_edges, internal_id, new_internal_id);
-        internal_id = std::move(new_internal_id);
+        // // TODO(eunsoo): reorder required?
+        // // add additional reorder in case TI output type != body output type
+        // cldnn::primitive_id new_internal_id = internal_id + "_reorder";
+        // const auto new_body_output_type = DataTypeFromPrecision(ti_output_type);
+        // auto reorderPrim = cldnn::reorder(new_internal_id, internal_id, cldnn::format::any, new_body_output_type);
+        // body_topology.add(reorderPrim);
+        // UpdateBackedge(back_edges, internal_id, new_internal_id);
+        // internal_id = std::move(new_internal_id);
 
         // update primitive_map
         if (const auto& concatOutput =

@@ -29,6 +29,7 @@ Function::Function(const ResultVector& results,
     , m_topological_sorter(topological_sort<std::vector<std::shared_ptr<Node>>>)
     , m_results(results)
     , m_parameters(parameters)
+    , m_is_body_network(false)
 {
     check_all_parameters_registered();
 }
@@ -41,6 +42,7 @@ Function::Function(const OutputVector& results,
     , m_topological_sorter(topological_sort<std::vector<std::shared_ptr<Node>>>)
     , m_results(as_result_vector(results))
     , m_parameters(parameters)
+    , m_is_body_network(false)
 {
     check_all_parameters_registered();
 }
@@ -53,6 +55,7 @@ Function::Function(const NodeVector& results,
     , m_topological_sorter(topological_sort<std::vector<std::shared_ptr<Node>>>)
     , m_results(as_result_vector(as_output_vector(results)))
     , m_parameters(parameters)
+    , m_is_body_network(false)
 {
     check_all_parameters_registered();
 }
@@ -74,6 +77,7 @@ Function::Function(const ResultVector& results,
     , m_results(results)
     , m_sinks(sinks)
     , m_parameters(parameters)
+    , m_is_body_network(false)
 {
     check_all_parameters_registered();
 }
