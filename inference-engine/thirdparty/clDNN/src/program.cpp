@@ -888,8 +888,6 @@ bool program_impl::extract_and_remove(program_node& node) {
     }
 
     auto& input = node.get_dependency(0);
-    node.dependencies.clear();
-    input.users.remove(&node);
 
     // update primitive_map of loop primitive,
     // if extracted node is input of loop
@@ -903,6 +901,8 @@ bool program_impl::extract_and_remove(program_node& node) {
             loop.update_primitive_map(node.id(), user->id());
         }
     }
+    input.users.remove(&node);
+    node.dependencies.clear();
 
     if (!node.is_endpoint())
         replace_all_usages(node, input);

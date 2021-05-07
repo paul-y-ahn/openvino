@@ -51,7 +51,7 @@ static bool check_if_axis_is_set_properly(loop_node const & node) {
         assert(found != dependencies.end());
         const layout input_layout = (*found)->get_output_layout();
         const auto shape = input_layout.size.sizes(input_layout.format);
-        const int32_t iteration_axis = node.convert_to_raw_axis(pm.get().axis, shape.size());
+        const size_t iteration_axis = node.convert_to_raw_axis(pm.get().axis, static_cast<int32_t>(shape.size()));
         if (iteration_size < 0) {
             iteration_size = shape[iteration_axis];
         } else {
@@ -134,7 +134,7 @@ layout loop_inst::calc_output_layout(loop_node const & node) {
     if (axis_to_iterate_throgh != -1) {
         const auto shape = loop_output_layout.size.sizes(loop_output_layout.format);
         const size_t ndim = shape.size();
-        const size_t raw_axis = node.convert_to_raw_axis(axis_to_iterate_throgh, ndim);
+        const size_t raw_axis = node.convert_to_raw_axis(axis_to_iterate_throgh, static_cast<int>(ndim));
         loop_output_layout.size.raw[raw_axis] = node.get_max_iteration();
     }
     return loop_output_layout;

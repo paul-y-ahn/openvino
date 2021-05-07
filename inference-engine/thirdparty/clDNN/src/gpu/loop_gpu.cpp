@@ -101,7 +101,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 const int max_iteration = node.get_max_iteration();
                 std::vector<memory_impl::ptr> cropped_mems;
                 cropped_mems.reserve(max_iteration);
-                for (int i=0; i < max_iteration; ++i) {
+                for (int j=0; j < max_iteration; ++j) {
                     memory_impl::ptr croped_mem = engine.allocate_memory(cropped_layout, 0);
                     cropped_mems.push_back(croped_mem);
                 }
@@ -125,8 +125,8 @@ struct loop_gpu : typed_primitive_impl<loop> {
         auto& iteration_mem = instance.input_iteration_mem;
         auto body_network = instance.get_body_network();
         const auto& input_primitive_map = node.get_input_mappings();
-        const int inputs_memory_count = instance.inputs_memory_count();
-        for (int memory_num = 0; memory_num < inputs_memory_count; memory_num++) {
+        const size_t inputs_memory_count = instance.inputs_memory_count();
+        for (size_t memory_num = 0; memory_num < inputs_memory_count; memory_num++) {
             const primitive_id& input_external_id = instance.dependencies().at(memory_num)->id();
             if (input_external_id == node.get_trip_count_id() ||
                 input_external_id == node.get_initial_execution_id()) {
@@ -147,7 +147,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
                     const int max_iteration = node.get_max_iteration();
                     std::vector<memory_impl::ptr> cropped_mems;
                     cropped_mems.reserve(max_iteration);
-                    for (int i=0; i < max_iteration; ++i) {
+                    for (int j=0; j < max_iteration; ++j) {
                         memory_impl::ptr croped_mem = engine.allocate_memory(cropped_layout, 0);
                         cropped_mems.push_back(croped_mem);
                     }
@@ -201,8 +201,8 @@ struct loop_gpu : typed_primitive_impl<loop> {
                         } else {
                             memory_impl::ptr initial_mem = get_outer_output_memory(instance, input_pm.external_id);
                             backedge_mem.emplace_back(body_output, initial_mem);
-                            for (int i = 0 ; i < max_iteration; ++i) {
-                                memory_impl::ptr from_mem = from_mems.at(i);
+                            for (int j = 0 ; j < max_iteration; ++j) {
+                                memory_impl::ptr from_mem = from_mems.at(j);
                                 backedge_mem.back().add_backedge_from_mem(from_mem);
                             }
                         }

@@ -69,7 +69,7 @@ public:
                 this->get_primitive()->DEFAULT_MAX_ITERATION :
                 this->get_primitive()->max_iteration) {}
 
-    mutable int iteration_axis;
+    mutable size_t iteration_axis;
     int32_t max_iteration;
 
     int32_t get_max_iteration() const { return max_iteration; }
@@ -101,16 +101,16 @@ public:
     }
 
     layout calc_body_input_layout(const loop::primitive_mapping& inputDesc) const {
-        const auto& dependencies = get_dependencies();
-        auto input = std::find_if(dependencies.begin(), dependencies.end(), [&inputDesc](const program_node* p){
+        const auto& dependency_list = this->get_dependencies();
+        auto input = std::find_if(dependency_list.begin(), dependency_list.end(), [&inputDesc](const program_node* p){
             return p->id() == inputDesc.external_id;
         });
-        assert(input != dependencies.end());
+        assert(input != dependency_list.end());
         layout calculated_layout = (*input)->get_output_layout();
         auto shape = calculated_layout.size.sizes(calculated_layout.format);
 
         if (inputDesc.axis >= 0) {
-            iteration_axis = convert_to_raw_axis(inputDesc.axis, shape.size());
+            iteration_axis = convert_to_raw_axis(inputDesc.axis, static_cast<int>(shape.size()));
             calculated_layout.size.raw[iteration_axis] = 1; // cropped inputs shape
         }
 
@@ -165,7 +165,6 @@ public:
             default:
                 return false;
         }
-        return false;
     }
 
     void process_single_int_input(const primitive_id& id) const {
@@ -223,14 +222,14 @@ public:
         // TODO: handle multiple output_primitive_map
         std::set<primitive_id> output_names;
         output_names.insert(output_mappings.begin()->internal_id);
-        const auto& back_edges = get_primitive()->back_edges;
+        const auto& back_edges_list = this->get_primitive()->back_edges;
 
         // add current_iteration_id in body network, condition_id if exist
         process_single_int_input(get_current_iteration_id());
         process_single_int_input(get_condition_id());
 
         // setup outputs for backedges
-        for (auto& back_edge : back_edges) {
+        for (auto& back_edge : back_edges_list) {
             // check whether the back_edge.to has its corresponding primitive_mapping
             const auto& input_mapping = std::find_if(input_mappings.begin(), input_mappings.end(),
                 [&](const loop::primitive_mapping& pm) {
@@ -246,11 +245,11 @@ public:
                     continue;
                 }
                 const auto dependencies_ref = prim.second->dependencies();
-                std::vector<primitive_id> dependencies(dependencies_ref.size());
+                std::vector<primitive_id> dep_pids(dependencies_ref.size());
                 for (const auto& dep : dependencies_ref) {
-                    dependencies.emplace_back(dep.get());
+                    dep_pids.emplace_back(dep.get());
                 }
-                setup_internal_mutabledata_node(back_edge.from, calc_body_input_layout(*input_mapping), dependencies);
+                setup_internal_mutabledata_node(back_edge.from, calc_body_input_layout(*input_mapping), dep_pids);
             }
 
             output_names.insert(back_edge.from);
@@ -308,7 +307,7 @@ public:
             to_id(to_id),
             concatenated_mem(concatenated_mem),
             sliced_mem(sliced_mem),
-            bytes_per_element(data_type_traits::size_of(concatenated_mem->get_layout().data_type)),
+            bytes_per_element(static_cast<int>(data_type_traits::size_of(concatenated_mem->get_layout().data_type))),
             byte_size_iteration_elements(iteration_elements * bytes_per_element),
             byte_size_stride(stride * bytes_per_element),
             byte_size_initial_offset(initial_offset * bytes_per_element) {}
