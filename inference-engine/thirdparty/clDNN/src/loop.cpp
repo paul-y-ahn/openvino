@@ -231,8 +231,8 @@ void loop_inst::show_performance_counts() {
     std::cout << "Profiling loop " << net_id << std::endl;
     std::cout << std::left << std::setw(max_str_length) << "layer name" << "|";
     std::cout << std::left << std::setw(6)  << "Count" << "|";
-    std::cout << std::left << std::setw(20) << "CPU time" << "|";
-    std::cout << std::left << std::setw(20) << "GPU time" << std::endl;
+    std::cout << std::left << std::setw(20) << "AVG CPU time" << "|";
+    std::cout << std::left << std::setw(20) << "AVG GPU time" << std::endl;
     std::cout << std::setfill('-') << std::setw((max_str_length+50)) << "-" << std::endl;
     std::cout << std::setfill(' ');
     long long cpu_time_sum = 0;
@@ -261,8 +261,6 @@ void loop_inst::show_performance_counts() {
 }
 
 void loop_inst::update_performance_data(const cldnn::primitive_id body_prim_id, cldnn::event event) {
-    // auto net_id = this->id();
-    // primitive_id body_prim_id = net_id+":"+id;
     cldnn::instrumentation::profiling_info cldnnInfo{body_prim_id, event.get_profiling_info()};
 
     perf_counter prof_info = {};
@@ -288,7 +286,6 @@ void loop_inst::update_performance_data(const cldnn::primitive_id body_prim_id, 
     max_str_length = std::max(max_str_length, static_cast<int>(body_prim_id.length()));
     auto it = perfMap.find(body_prim_id);
     if (it == perfMap.end()) {
-        // perfMap[body_prim_id].second = prof_info;
         perfMap.insert(std::pair<cldnn::primitive_id, cldnn::perf_counter>(body_prim_id, prof_info));
     } else {
         perfMap[body_prim_id].cpu_time += prof_info.cpu_time;

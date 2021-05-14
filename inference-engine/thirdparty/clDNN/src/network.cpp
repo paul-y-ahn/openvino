@@ -649,17 +649,18 @@ std::map<primitive_id, event> network_impl::get_all_primitive_events() {
         }
     }
 
-    // if (_events.size() > 0) {
-    //     std::vector<event_impl::ptr> events;
-    //     for (auto& pair : _events) {
-    //         auto& ev = pair.second;q
-    //         if (ev->is_set())
-    //             continue;
-    //         events.push_back(ev);
-    //     }
+    if (_events.size() > 0) {
+        std::vector<event_impl::ptr> events;
+        for (auto& pair : _events) {
+            auto& ev = pair.second;
+            if (ev->is_set())
+                continue;
 
-    //     get_engine().wait_for_events(events);
-    // }
+            events.push_back(ev);
+        }
+
+        get_engine().wait_for_events(events);
+    }
 
     std::map<primitive_id, event> result;
     for (auto& id : primitive_ids) {

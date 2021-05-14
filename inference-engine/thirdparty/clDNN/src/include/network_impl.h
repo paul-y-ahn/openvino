@@ -82,8 +82,8 @@ public:
     bool is_internal() const { return _internal; }
     bool is_primary_stream();
     bool is_secondary_stream();
-
     void show_loop_performance();
+
 private:
     uint32_t net_id = 0;
     const program_impl::cptr _program;

@@ -183,6 +183,7 @@ struct network {
     network_impl* get() const { return _impl; }
 
     void show_loop_performance();
+
 private:
     network_impl* _impl;
 
