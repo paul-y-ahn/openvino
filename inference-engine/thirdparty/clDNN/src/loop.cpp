@@ -24,7 +24,7 @@
 #include <string>
 #include <exception>
 #include <algorithm>
-
+#include <iomanip>
 namespace cldnn {
 primitive_type_id loop::type_id() {
     static primitive_type_base<loop> instance;
@@ -222,6 +222,79 @@ loop_inst::typed_primitive_inst(network_impl & network, loop_node const & node)
 
     validate_backedges(node);
     validate_mappings(node);
+}
+
+void loop_inst::show_performance_counts() {
+    auto net_id = this->id();
+    max_str_length += 5;
+    std::cout << std::endl;
+    std::cout << "Profiling loop " << net_id << std::endl;
+    std::cout << std::left << std::setw(max_str_length) << "layer name" << "|";
+    std::cout << std::left << std::setw(6)  << "Count" << "|";
+    std::cout << std::left << std::setw(20) << "CPU time" << "|";
+    std::cout << std::left << std::setw(20) << "GPU time" << std::endl;
+    std::cout << std::setfill('-') << std::setw((max_str_length+50)) << "-" << std::endl;
+    std::cout << std::setfill(' ');
+    long long cpu_time_sum = 0;
+    long long device_time_sum = 0;
+    long num = 0;
+    for (auto& perf_data : perfMap) {
+        auto& data = perf_data.second;
+        cpu_time_sum += data.cpu_time_avg();
+        device_time_sum += data.device_time_avg();
+        num = data.num;
+        std::cout << std::left << std::setw(max_str_length) << perf_data.first << "|";
+        std::cout << std::left << std::setw(6) << data.num << "|";
+        std::cout << std::left << std::setw(7) << data.cpu_time_avg() << "(";
+        std::cout << std::left << std::setw(10) << data.cpu_time << ") |";
+        std::cout << std::left << std::setw(7) << data.device_time_avg() << "(";
+        std::cout << std::left << std::setw(10) << data.device_time << ")" << std::endl;
+    }
+
+    std::cout << std::setfill('-') << std::setw((max_str_length+50)) << "-" << std::endl;
+    std::cout << std::setfill(' ');
+    std::cout << std::left << std::setw(max_str_length) << "Total" << "|";
+    std::cout << std::left << std::setw(6)  << num << "|";
+    std::cout << std::left << std::setw(20) << cpu_time_sum << "|";
+    std::cout << std::left << std::setw(15) << device_time_sum << std::endl;
+    std::cout << std::endl;
+}
+
+void loop_inst::update_performance_data(const cldnn::primitive_id body_prim_id, cldnn::event event) {
+    // auto net_id = this->id();
+    // primitive_id body_prim_id = net_id+":"+id;
+    cldnn::instrumentation::profiling_info cldnnInfo{body_prim_id, event.get_profiling_info()};
+
+    perf_counter prof_info = {};
+    prof_info.cpu_time = 0;
+    prof_info.device_time = 0;
+    prof_info.num = 1;
+    for (auto &interval : cldnnInfo.intervals) {
+        using duration_t = std::chrono::duration<long long, std::chrono::microseconds::period>;
+        auto count = std::chrono::duration_cast<duration_t>(interval.value->value()).count();
+
+        if (interval.name == "submission") {
+            prof_info.cpu_time += count;
+        } else if (interval.name == "executing") {
+            prof_info.device_time += count;
+        } else if (interval.name == "duration") {  // "duration" is used for CPU layers
+            prof_info.cpu_time += count;
+        }
+    }
+
+    if (perfMap.empty()) {
+        max_str_length = 0;
+    }
+    max_str_length = std::max(max_str_length, static_cast<int>(body_prim_id.length()));
+    auto it = perfMap.find(body_prim_id);
+    if (it == perfMap.end()) {
+        // perfMap[body_prim_id].second = prof_info;
+        perfMap.insert(std::pair<cldnn::primitive_id, cldnn::perf_counter>(body_prim_id, prof_info));
+    } else {
+        perfMap[body_prim_id].cpu_time += prof_info.cpu_time;
+        perfMap[body_prim_id].device_time += prof_info.device_time;
+        perfMap[body_prim_id].num += prof_info.num;
+    }
 }
 
 }  // namespace cldnn

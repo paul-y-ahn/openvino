@@ -310,6 +310,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
             write_scalar_value(*current_iteration_mem, current_iteration);
         }
 
+        std::vector<std::map<primitive_id, event>> events_logs;
         const auto& concatenated_input_mem_mappings = instance.concatenated_input_mem_mappings;
         const auto& concatenated_output_mem_mappings = instance.concatenated_output_mem_mappings;
         std::vector<event_impl::ptr> loop_carried_dep;
@@ -341,6 +342,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 body_network->execute(loop_carried_dep);
             }
             loop_carried_dep.clear();
+
             for (const auto& backedge : node.get_back_edges()) {
                 event_impl::ptr body_event = body_network->get_primitive_event(backedge.from);
                 loop_carried_dep.emplace_back(body_event);
@@ -355,6 +357,10 @@ struct loop_gpu : typed_primitive_impl<loop> {
             if (node.is_execution_condition_used()) {
                 execution_condition = read_scalar_value(*execution_condition_mem);
             }
+
+            auto bodynet_events = body_network->get_all_primitive_events();
+            events_logs.push_back(bodynet_events);
+
             // update index & execution condition for the next iteration
             ++current_iteration;
         }
@@ -372,6 +378,57 @@ struct loop_gpu : typed_primitive_impl<loop> {
         write_scalar_value(num_iteration_mem, current_iteration);
 
         dynamic_cast<cldnn::user_event*>(ev.get())->set();
+
+        // int bodynet_idx = 0;
+        // long long cpuTimeTotal = 0;
+        // long long deviceTimeTotal = 0;
+        for (auto& bodynet_events : events_logs) {
+            // std::cout << "bodynet[" << bodynet_idx << "] : " << std::endl;
+            for (auto& it : bodynet_events) {
+                instance.update_performance_data(it.first, it.second);
+                // cldnn::instrumentation::profiling_info cldnnInfo{it.first, it.second.get_profiling_info()};
+                // long long cpuTime = 0;
+                // long long deviceTime = 0;
+                // for (auto &interval : cldnnInfo.intervals) {
+                //     using duration_t = std::chrono::duration<long long, std::chrono::microseconds::period>;
+                //     auto count = std::chrono::duration_cast<duration_t>(interval.value->value()).count();
+
+                //     if (interval.name == "submission") {
+                //         cpuTime += count;
+                //     } else if (interval.name == "executing") {
+                //         deviceTime += count;
+                //     } else if (interval.name == "duration") {  // "duration" is used for CPU layers
+                //         cpuTime += count;
+                //     }
+                // }
+                // cpuTimeTotal += cpuTime;
+                // deviceTimeTotal += deviceTime;
+                // std::cout << "--- " << it.first << " : cpu[" << cpuTime << "] deviceTime[" << deviceTime << "]"<< std::endl;
+            }
+            // bodynet_idx++;
+        }
+        // {
+        //     auto interval_list = ev->get_profiling_info();
+        //     std::vector<instrumentation::profiling_interval> result(interval_list.size());
+        //     std::copy(interval_list.begin(), interval_list.end(), result.begin());
+        //     cldnn::instrumentation::profiling_info cldnnInfo{std::to_string(net_id), result};
+        //     long long cpuTime = 0;
+        //     long long deviceTime = 0;
+        //     for (auto &interval : cldnnInfo.intervals) {
+        //         using duration_t = std::chrono::duration<long long, std::chrono::microseconds::period>;
+        //         auto count = std::chrono::duration_cast<duration_t>(interval.value->value()).count();
+
+        //         if (interval.name == "submission") {
+        //             cpuTime += count;
+        //         } else if (interval.name == "executing") {
+        //             deviceTime += count;
+        //         } else if (interval.name == "duration") {  // "duration" is used for CPU layers
+        //             cpuTime += count;
+        //         }
+        //     }
+        //     std::cout << "--- loop_gpu_ event" << std::to_string(net_id) << " : cpu[" << cpuTime << "] deviceTime[" << deviceTime << "]"<< std::endl;
+        //     std::cout << "--- loop_gpu_ total" << std::to_string(net_id) << " : cpu[" << cpuTimeTotal << "] deviceTime[" << deviceTimeTotal << "]"<< std::endl;
+        // }
         return ev;
     }
 

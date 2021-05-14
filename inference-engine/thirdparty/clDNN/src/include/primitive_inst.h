@@ -130,6 +130,13 @@ public:
         return _node.is_output();
     }
 
+    virtual bool supports_internal_perf() { return false; }
+    virtual void show_performance_counts() {}
+    virtual void update_performance_data(const cldnn::primitive_id id, cldnn::event event) {
+        UNUSED(id);
+        UNUSED(event);
+    }
+
 protected:
     primitive_inst(network_impl& network, program_node const& node, bool allocate_memory);
 

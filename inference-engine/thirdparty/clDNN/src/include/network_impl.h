@@ -69,6 +69,7 @@ public:
     std::shared_ptr<primitive_inst> get_primitive(const primitive_id& id);
     std::string get_primitive_info(const primitive_id& id) const;
     const event_impl::ptr& get_primitive_event(const primitive_id& id) const { return _events.at(id); }
+    std::map<primitive_id, event> get_all_primitive_events();
     bool has_event(const primitive_id& id) const { return _events.count(id); }
     std::vector<std::shared_ptr<primitive_inst>> get_primitives(const std::vector<primitive_id>& ids);
     std::vector<std::shared_ptr<primitive_inst>> get_primitives(const std::vector<program_node*>& nodes);
@@ -82,6 +83,7 @@ public:
     bool is_primary_stream();
     bool is_secondary_stream();
 
+    void show_loop_performance();
 private:
     uint32_t net_id = 0;
     const program_impl::cptr _program;

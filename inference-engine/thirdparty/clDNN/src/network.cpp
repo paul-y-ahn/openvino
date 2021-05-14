@@ -139,6 +139,10 @@ void network::release() {
     _impl->release();
 }
 
+void network::show_loop_performance() {
+    _impl->show_loop_performance();
+}
+
 #ifdef DEBUG_DUMP_PATH
 static float convert_half_to_float(half_t val, bool flush_denorm_to_zero = false) {
 #if defined HALF_HALF_HPP
@@ -441,6 +445,14 @@ std::string network_impl::get_primitive_info(const primitive_id& id) const {
     return node.type()->to_string(node);
 }
 
+void network_impl::show_loop_performance() {
+    for (auto& inst : _exec_order) {
+        if (inst->supports_internal_perf()) {
+            inst->show_performance_counts();
+        }
+    }
+}
+
 void network_impl::allocate_primitives() {
     std::vector<std::shared_ptr<program_node>> nodes_to_allocate{};
     for (auto node : _program->get_processing_order()) {
@@ -623,6 +635,42 @@ std::vector<primitive_id> network_impl::get_all_primitive_ids() const {
         else
             ret.push_back(primitive.second->id());
     return ret;
+}
+
+std::map<primitive_id, event> network_impl::get_all_primitive_events() {
+    auto primitive_ids = get_executed_primitive_ids();
+    auto all_primitive_ids = get_all_primitive_ids();
+    auto all_primitive_org_ids = get_all_primitive_org_ids();
+    // Get list of optimized prmitives
+    std::vector<primitive_id> optimized_primitives;
+    for (decltype(all_primitive_org_ids.size()) i = 0; i < all_primitive_org_ids.size(); i++) {
+        if (all_primitive_ids[i] == "_optimized_") {
+            optimized_primitives.push_back(all_primitive_org_ids[i]);
+        }
+    }
+
+    // if (_events.size() > 0) {
+    //     std::vector<event_impl::ptr> events;
+    //     for (auto& pair : _events) {
+    //         auto& ev = pair.second;q
+    //         if (ev->is_set())
+    //             continue;
+    //         events.push_back(ev);
+    //     }
+
+    //     get_engine().wait_for_events(events);
+    // }
+
+    std::map<primitive_id, event> result;
+    for (auto& id : primitive_ids) {
+        if (std::find(optimized_primitives.begin(), optimized_primitives.end(), id) == optimized_primitives.end()) {
+            auto out_event = get_primitive_event(id);
+            result.emplace(id, event(out_event.detach()));
+        }
+    }
+    _events.clear();
+
+    return result;
 }
 
 std::vector<primitive_id> network_impl::get_all_primitive_org_ids() const {

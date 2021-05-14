@@ -599,6 +599,8 @@ std::map<std::string, InferenceEngine::InferenceEngineProfileInfo> CLDNNGraph::G
     auto executedPrimitives = GetNetwork()->get_executed_primitives();
     auto primitivesInfo = GetNetwork()->get_primitives_info();
 
+    GetNetwork()->show_loop_performance();
+
     auto getUpperCaseName = [&](std::string name) {
         if (name.length() > 0)
             name[0] = toupper(name[0]);

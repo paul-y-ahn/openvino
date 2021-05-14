@@ -287,6 +287,18 @@ public:
 
 using loop_node = typed_program_node<loop>;
 
+struct perf_counter {
+    uint64_t device_time;
+    uint64_t cpu_time;
+    uint32_t num;
+
+public:
+    perf_counter() : device_time(0), cpu_time(0), num(0) {}
+
+    long long device_time_avg() const { return (num == 0) ? 0 : device_time / num; }
+    long long cpu_time_avg() const { return (num == 0) ? 0 : cpu_time / num; }
+};
+
 template <>
 class typed_primitive_inst<loop> : public typed_primitive_inst_base<loop> {
     using parent = typed_primitive_inst_base<loop>;
@@ -434,9 +446,15 @@ private:
 public:
     typed_primitive_inst(network_impl& network, const loop_node& node);
     network_impl::ptr get_body_network() const { return body_network; }
+    bool supports_internal_perf() { return true; }
+    void show_performance_counts();
+    void update_performance_data(const cldnn::primitive_id id, cldnn::event event);
 
 private:
     network_impl::ptr body_network;
+    std::map<cldnn::primitive_id, perf_counter> perfMap;
+    std::vector<cldnn::primitive_id> profilingIDs;
+    int max_str_length;
 };
 
 using loop_inst = typed_primitive_inst<loop>;
