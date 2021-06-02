@@ -11,6 +11,7 @@
 #include "primitive_db.h"
 #include <string>
 #include <vector>
+#include <atomic>
 
 namespace kernel_selector {
 using primitive_db = kernel_selector::gpu::cache::primitive_db;
@@ -73,6 +74,7 @@ protected:
     virtual JitConstants MakeFusedOpsDeclsJitConstants(const base_params &params, const std::vector<FusedOpsConfiguration> &conf) const;
 
 private:
-    static thread_local size_t counter;
+    static std::atomic<size_t> counter;
+    //static thread_local size_t counter;
 };
 }  // namespace kernel_selector
