@@ -10,7 +10,12 @@
 #include <memory>
 #include <atomic>
 #include <string>
+#define USE_SET_KERNELS_CODE
+#ifdef USE_SET_KERNELS_CODE
+#include <set>
+#else
 #include <unordered_set>
+#endif
 #include <kernel_selector_common.h>
 
 #define CLDNN_THREADING_SEQ 0
@@ -116,6 +121,7 @@ public:
         std::map<std::string, std::string> entry_point_to_id;
     };
 
+
     struct kernel_code {
         std::shared_ptr<kernel_selector::kernel_string> kernel_strings;
         std::string id;
@@ -130,10 +136,19 @@ public:
               id(_id),
               dump_custom_program(_dump_custom_program),
               one_time_kernel(_one_time_kernel) {}
+#ifdef USE_SET_KERNELS_CODE
+        bool operator == (const kernel_code& c2) const {
+            return (kernel_strings->entry_point.compare(c2.kernel_strings->entry_point) == 0);
+        }
 
+        bool operator < (const kernel_code& c2) const {
+            return (kernel_strings->entry_point.compare(c2.kernel_strings->entry_point) < 0);
+        }
+#else
         bool operator == (const kernel_code& c2) const {
             return kernel_strings->get_hash() == c2.kernel_strings->get_hash();
         }
+#endif
     };
 
     struct hash_kernel_code {
@@ -145,7 +160,11 @@ public:
     typedef std::string kernel_id;
     typedef cl::KernelIntel kernel_type;
     using kernels_map = std::map<std::string, kernel_type>;
+#ifdef USE_SET_KERNELS_CODE
+    using kernels_code = std::set<kernel_code>;
+#else
     using kernels_code = std::unordered_set<kernel_code, hash_kernel_code>;
+#endif
 
 private:
     gpu_toolkit& _context;
