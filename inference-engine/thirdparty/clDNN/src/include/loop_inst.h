@@ -177,8 +177,8 @@ public:
         const topology_map& body_topology_map = body.get_primitives();
         if (!id.empty()) {
             // add input_layout if not exist
-            if (body_topology_map.count(id)) {
-                layout body_input_layout(data_types::i32, format::bfyx, {1, 1, 1, 1});
+            if (body_topology_map.find(id) == body_topology_map.end()) {
+                layout body_input_layout(data_types::i64, format::bfyx, {1, 1, 1, 1});
                 body.add(std::make_shared<input_layout>(id, body_input_layout));
             } else {
                 const auto& body_input_prim = body.at(id);
@@ -195,6 +195,28 @@ public:
                 CLDNN_ERROR_BOOL(this->id(), "Error while building body program",
                     input_layout_prim->layout.count() != 1,
                     id + " should have 1 element");
+            }
+        }
+    }
+
+    void process_single_int_output(const primitive_id& id) const {
+        // add mutable if not exist
+        const topology_map& body_topology_map = body.get_primitives();
+        if (!id.empty()) {
+            if (body_topology_map.find(id) == body_topology_map.end()) {
+                layout body_output_layout(data_types::i64, format::bfyx, {1, 1, 1, 1});
+                auto mem_impl = get_program().get_engine().allocate_memory(body_output_layout, 0).detach();
+                cldnn::memory mem(mem_impl);
+                auto md = std::make_shared<cldnn::mutable_data>(id, mem);
+                body.add(md);
+            } else {
+                const auto& body_input_prim = body.at(id);
+                CLDNN_ERROR_BOOL(this->id(), "Error while building body program",
+                    !static_cast<bool>(body_input_prim->output_data_type),
+                    "data_type of " + id + " is not specified");
+                CLDNN_ERROR_BOOL(this->id(), "Error while building body program",
+                    !is_integer(*(body_input_prim->output_data_type)),
+                    id + " is not integer type");
             }
         }
     }
@@ -234,7 +256,7 @@ public:
 
         // add current_iteration_id in body network, condition_id if exist
         process_single_int_input(get_current_iteration_id());
-        process_single_int_input(get_condition_id());
+        process_single_int_output(get_condition_id());
 
         // setup outputs for backedges
         for (auto& back_edge : back_edges_list) {
