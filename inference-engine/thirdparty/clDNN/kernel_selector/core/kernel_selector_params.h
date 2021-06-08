@@ -404,6 +404,7 @@ public:
     std::string layerID;
     std::string forceImplementation;
     EngineInfo engineInfo;
+    size_t uniqueID;
 
     virtual std::string to_string() const;
     virtual std::string to_cache_string_v2() const;
@@ -625,6 +626,8 @@ struct optional_params {
     TuningParams tuningParams;
 
     virtual ParamsKey GetSupportedKey() const;
+
+    size_t uniqueID;
 
 protected:
     explicit optional_params(KernelType kt) : kType(kt) {}

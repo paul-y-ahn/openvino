@@ -735,6 +735,7 @@ void set_params(const program_node& node, kernel_selector::params& params) {
     const auto& program = node.get_program();
     const auto& context = program.get_engine().get_context();
     const auto& device_info = context->get_device_info();
+    params.uniqueID = node.get_unique_id();
 
     params.engineInfo.bSubGroupSupport = context->extension_supported("cl_intel_subgroups");
     params.engineInfo.bSubGroupShortSupport = context->extension_supported("cl_intel_subgroups_short");
