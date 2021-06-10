@@ -251,7 +251,6 @@ kernels_cache::kernel_id kernels_cache::set_kernel_source(
     // we need unique id in order to avoid conflict across topologies.
     const auto kernel_num = _kernels.size() + _kernels_code.size();
     kernels_cache::kernel_id id = kernel_string->entry_point + "_" + std::to_string(kernel_num);
-
     auto res = _kernels_code.emplace(kernel_string, id, dump_custom_program, one_time_kernel);
 
     assert(_kernels.find(id) == _kernels.end());

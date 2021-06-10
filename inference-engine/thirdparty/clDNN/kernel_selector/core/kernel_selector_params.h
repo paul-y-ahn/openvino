@@ -628,6 +628,7 @@ struct optional_params {
     virtual ParamsKey GetSupportedKey() const;
 
     size_t uniqueID;
+    size_t programID;
 
 protected:
     explicit optional_params(KernelType kt) : kType(kt) {}

@@ -769,6 +769,7 @@ void set_params(const program_node& node, kernel_selector::params& params) {
 void set_optional_params(const program_impl& program, kernel_selector::optional_params& params) {
     const auto& context = program.get_engine().get_context();
 
+    params.programID = program.get_id();
     params.meaningfulKernelsNames = context->get_configuration().meaningful_kernels_names;
     params.allowStaticInputReordering = program.get_options().get<build_option_type::optimize_data>()->enabled() ||
                                         program.get_options().get<build_option_type::allow_static_input_reorder>()->enabled();

@@ -121,7 +121,9 @@ bool UpdateWeightsParams(weight_bias_params& newParams,
             r_params.engineInfo = newParams.engineInfo;
             r_params.uniqueID = (options.uniqueID + 10000);
 
+
             reorder_optional_params op;
+            op.programID = options.programID;
             KernelsData kernels_data = reorderKS.GetBestKernels(r_params, op);
 
             if (kernels_data.empty()) {

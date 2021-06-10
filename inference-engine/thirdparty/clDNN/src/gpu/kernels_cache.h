@@ -139,10 +139,12 @@ public:
 #ifdef USE_SET_KERNELS_CODE
         bool operator == (const kernel_code& c2) const {
             return (kernel_strings->entry_point.compare(c2.kernel_strings->entry_point) == 0);
+            // return (id.compare(c2.id) == 0);
         }
 
         bool operator < (const kernel_code& c2) const {
             return (kernel_strings->entry_point.compare(c2.kernel_strings->entry_point) < 0);
+            // return (id.compare(c2.id) < 0);
         }
 #else
         bool operator == (const kernel_code& c2) const {
