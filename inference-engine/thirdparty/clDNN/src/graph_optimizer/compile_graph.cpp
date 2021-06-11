@@ -42,7 +42,8 @@ void compile_graph::run(program_impl& p) {
     auto start = std::chrono::high_resolution_clock::now();
 #if (CLDNN_THREADING == CLDNN_THREADING_TBB)
     const auto n_threads = p.get_engine().get_context()->get_configuration().n_threads;
-    // std::cout << "CLDNN_THREADING_TBB - n_threads: " << n_threads << std::endl;
+    // const auto n_threads = 1;
+    std::cout << "CLDNN_THREADING_TBB - n_threads: " << n_threads << std::endl;
     auto arena = std::unique_ptr<tbb::task_arena>(new tbb::task_arena());
     arena->initialize(n_threads);
     auto& proc_order = p.get_processing_order();
