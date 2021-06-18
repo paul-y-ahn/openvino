@@ -63,8 +63,9 @@ public:
 }  // namespace
 
 std::string KernelBaseOpenCL::GetEntryPoint(const std::string& templateName,
-                                              const std::string& layerID,
-                                              const optional_params& options) const {
+                                            const std::string& layerID,
+                                            const optional_params& options,
+                                            const size_t entryIdx) const {
     std::string kernelID = layerID;
 
     if (kernelID.empty() || !options.meaningfulKernelsNames) {
@@ -74,7 +75,10 @@ std::string KernelBaseOpenCL::GetEntryPoint(const std::string& templateName,
     std::replace(kernelID.begin(), kernelID.end(), '.', '_');
     std::replace(kernelID.begin(), kernelID.end(), '/', '_');
 
-    kernelID += "_" + std::to_string(UniqeID());
+    if (entryIdx == 0)
+        kernelID += "_" + options.uniqueID;
+    else
+        kernelID += "_" + options.uniqueID + "_" + std::to_string(entryIdx);
 
     return kernelID;
 }
