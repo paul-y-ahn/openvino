@@ -736,11 +736,13 @@ void set_params(const program_node& node, kernel_selector::params& params) {
     const auto& context = program.get_engine().get_context();
     const auto& device_info = context->get_device_info();
 
+    params.uniqueID = std::to_string(program.get_id()) + "_"  + std::to_string(node.get_unique_id());
     params.engineInfo.bSubGroupSupport = context->extension_supported("cl_intel_subgroups");
     params.engineInfo.bSubGroupShortSupport = context->extension_supported("cl_intel_subgroups_short");
     params.engineInfo.bSubGroupCharSupport = context->extension_supported("cl_intel_subgroups_char");
     params.engineInfo.bFP16Support = context->extension_supported("cl_khr_fp16");
     params.engineInfo.bFP64Support = context->extension_supported("cl_khr_fp64");
+
     params.engineInfo.bIMADSupport = device_info.supports_imad != 0;
     params.engineInfo.bIMMADSupport = device_info.supports_immad != 0;
     params.engineInfo.bImageSupport = device_info.supports_image != 0;
