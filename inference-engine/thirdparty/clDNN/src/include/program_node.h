@@ -305,11 +305,11 @@ public:
 
     bool need_lockable_memory() const;
 
-    size_t get_unique_id() const { return unique_id; }
-    void set_unique_id(size_t id) { unique_id = id; }
+    std::string get_unique_id() const { return unique_id; }
+    void set_unique_id(std::string id) { unique_id = id; }
 
 protected:
-    size_t unique_id;
+    std::string unique_id;
 
     std::shared_ptr<primitive> desc;
     program_impl& myprog;

@@ -123,19 +123,15 @@ public:
         bool operator == (const kernel_code& c2) const {
             return (kernel_strings->entry_point.compare(c2.kernel_strings->entry_point) == 0);
         }
+    };
 
-        bool operator < (const kernel_code& c2) const {
-            return (kernel_strings->entry_point.compare(c2.kernel_strings->entry_point) < 0);
+    struct cmp_kernel_code {
+        size_t operator()(const kernel_code& x1, const kernel_code& x2) const {
+            return (x1.kernel_strings->entry_point.compare(x2.kernel_strings->entry_point) < 0);
         }
     };
 
-    struct hash_kernel_code {
-        size_t operator()(const kernel_code& x) const {
-            return std::hash<std::string>()(x.kernel_strings->get_hash());
-        }
-    };
-
-    using kernels_code = std::set<kernel_code>;
+    using kernels_code = std::set<kernel_code, cmp_kernel_code>;
 
 private:
     static std::mutex _mutex;
