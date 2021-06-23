@@ -43,6 +43,14 @@ public:
         }
     }
 
+    std::shared_ptr<primitive>& at(primitive_id id) {
+        try {
+            return _primitives.at(id);
+        } catch (...) {
+            throw std::runtime_error("Topology doesn't contain primtive: " + id);
+        }
+    }
+
     void change_input_layout(const primitive_id& id, const layout& new_layout) {
         auto& inp_layout = this->at(id);
         if (inp_layout->type != input_layout::type_id()) {

@@ -2,17 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
 #include "cldnn_program.h"
 #include "cldnn_common_utils.h"
-#include "caseless.hpp"
+#include "cldnn_engine.h"
+
+#include <cpp/ie_cnn_network.h>
 
 #include "ngraph/op/loop.hpp"
+#include "ngraph/op/constant.hpp"
 #include "ngraph/op/util/sub_graph_base.hpp"
+#include "transformations/utils/utils.hpp"
 
-#include "api/loop.hpp"
-#include "api/mutable_data.hpp"
-#include "api/data.hpp"
-#include "api/topology.hpp"
+#include "cldnn/primitives/loop.hpp"
+#include "cldnn/primitives/mutable_data.hpp"
+#include "cldnn/primitives/data.hpp"
+#include "cldnn/primitives/reorder.hpp"
+#include "cldnn/graph/topology.hpp"
+
+#include <vector>
+#include <algorithm>
 
 using Loop = ngraph::op::v5::Loop;
 
@@ -20,9 +29,8 @@ namespace CLDNNPlugin {
 
 template<class DATA_TYPE>
 static DATA_TYPE CreateScalarData(Program &p, const cldnn::primitive_id& id, int64_t num) {
-    auto mem = cldnn::memory::allocate(p.GetEngine(),
-        { cldnn::data_types::i64, cldnn::format::bfyx, { 1, 1, 1, 1 } });
-    auto ptr = mem.pointer<int64_t>();
+    auto mem = p.GetEngine().allocate_memory({ cldnn::data_types::i64, cldnn::format::bfyx, { 1, 1, 1, 1 } });
+    cldnn::mem_lock<int64_t> ptr{mem, p.GetEngine().get_program_stream()};
     *ptr.begin() = num;
     return {id, mem};
 }
@@ -34,7 +42,7 @@ static cldnn::mutable_data CreateAdditionalOutputData(Program &p, const std::sha
     const auto format = DefaultFormatForDims(op->get_output_shape(output_idx).size());
     const auto tensor = CldnnTensorFromIEDims(op->get_output_shape(output_idx));
     cldnn::layout output_layout = cldnn::layout(precision, format, tensor);
-    auto mem = cldnn::memory::allocate(p.GetEngine(), output_layout);
+    auto mem = p.GetEngine().allocate_memory(output_layout);
     auto md = cldnn::mutable_data(id, {input}, mem); // cldnn::data cannot set dependency
     return md;
 }
@@ -48,19 +56,64 @@ static void UpdateBackedge(std::vector<cldnn::loop::backedge_mapping>& back_edge
     }
 }
 
-void CreateLoopOp(Program& p, const std::shared_ptr<ngraph::op::v5::Loop>& op) {
+static std::string GetExternalInputName(const int64_t body_parameter_index,
+                                        const std::shared_ptr<Loop>& op) {
+    const auto& loop_input_descs = op->get_input_descriptions();
+    for (const auto& loop_input_desc : loop_input_descs) {
+        if (loop_input_desc->m_body_parameter_index == body_parameter_index) {
+            auto external_node = op->get_input_node_shared_ptr(loop_input_desc->m_input_index);
+            return layer_type_name_ID(external_node);
+        }
+    }
+    return {""};
+}
+
+void CreateLoopOp(Program& p, const std::shared_ptr<Loop>& op) {
+    const std::string layerName = layer_type_name_ID(op);
     auto inputPrimitives = p.GetInputPrimitiveIDs(op);
-
-    // get body topology from ngraph function
-    InferenceEngine::CNNNetwork body_network(op->get_function());
-    Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), true);
-    auto body_topology = *body_program.GetTopology();
-
-    // setup input_primitive_maps/ output_primitive_maps and back_edges
     const auto& loop_input_descs = op->get_input_descriptions();
     const auto& loop_output_descs = op->get_output_descriptions();
     const auto& body_inputs = op->get_function()->get_parameters();
     const auto& body_outputs = op->get_function()->get_results();
+
+    InferenceEngine::CNNNetwork body_network(op->get_function());
+    auto networkInputs = body_network.getInputsInfo();
+    auto networkOutputs = body_network.getOutputsInfo();
+
+    // Set special body ports: current_iteration input , execution condition output
+    auto special_body_ports = op->get_special_body_ports();
+
+    std::string body_current_iteration_id;
+    if (special_body_ports.current_iteration_input_idx >= 0) {
+        auto current_iteration_input = body_inputs.at(special_body_ports.current_iteration_input_idx);
+        body_current_iteration_id = layer_type_name_ID(current_iteration_input);
+        std::string input_name = ngraph::op::util::create_ie_output_name(current_iteration_input);
+        const auto networkInput = networkInputs.at(input_name);
+        if (networkInput->getPrecision().is_float()) {
+            networkInput->setPrecision(InferenceEngine::Precision::I64);
+        }
+    }
+
+    cldnn::primitive_id body_execution_condition_id;
+    if (special_body_ports.body_condition_output_idx >= 0) {
+#if 0
+        auto body_condition_output = body_outputs.at(special_body_ports.body_condition_output_idx);
+#else
+        auto body_condition_output = body_outputs.at(special_body_ports.body_condition_output_idx)->get_input_node_shared_ptr(0);
+#endif
+        body_execution_condition_id = layer_type_name_ID(body_condition_output);
+        std::string output_name = ngraph::op::util::create_ie_output_name(body_condition_output);
+        const auto networkOutput = networkOutputs.at(output_name);
+        if (networkOutput->getPrecision().is_float()) {
+            networkOutput->setPrecision(InferenceEngine::Precision::I64);
+        }
+    }
+
+    // get body topology from ngraph function
+    Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), true);
+    auto body_topology = *body_program.GetTopology();
+
+    // setup input_primitive_maps/ output_primitive_maps and back_edges
 
     std::vector<cldnn::loop::io_primitive_map> input_primitive_maps;
     std::vector<cldnn::loop::io_primitive_map> output_primitive_maps;
@@ -108,26 +161,11 @@ void CreateLoopOp(Program& p, const std::shared_ptr<ngraph::op::v5::Loop>& op) {
 
     // set trip count, initial execution condition, num iteration primitives
     // they should be mutable_data to prevent from being optimized out
-    std::string layerName = layer_type_name_ID(op);
-    const cldnn::primitive_id trip_count_id = layerName + "_tripCount";
+    const cldnn::primitive_id trip_count_id = layer_type_name_ID(op->get_input_node_shared_ptr(0));
+    const cldnn::primitive_id execution_condition_id = layer_type_name_ID(op->get_input_node_shared_ptr(1));
     const int64_t num_iterations = op->get_num_iterations();
     if (num_iterations < 0) {
-        throw std::runtime_error("tensor iterator's num_iteration cannot be negative");
-    }
-    {
-        cldnn::data trip_count = CreateScalarData<cldnn::data>(p, trip_count_id, num_iterations);
-        p.primitivesToIRLayersMap[trip_count_id] = { op->get_friendly_name() };
-        p.primitiveIDs[trip_count_id] = trip_count_id;
-        p.AddPrimitive(trip_count);
-        p.AddInnerPrimitiveToProfiler(trip_count_id, layerName, op);
-    }
-    const cldnn::primitive_id execution_condition_id = layerName + "_initialExecutionCondition";
-    {
-        cldnn::mutable_data execution_condition = CreateScalarData<cldnn::mutable_data>(p, execution_condition_id, 1);
-        p.primitivesToIRLayersMap[execution_condition_id] = { op->get_friendly_name() };
-        p.primitiveIDs[execution_condition_id] = execution_condition_id;
-        p.AddPrimitive(execution_condition);
-        p.AddInnerPrimitiveToProfiler(execution_condition_id, layerName, op);
+        throw std::runtime_error("loop's num_iteration cannot be negative");
     }
     const cldnn::primitive_id num_iteration_id = layerName + "_numIteration";
     {
@@ -174,18 +212,6 @@ void CreateLoopOp(Program& p, const std::shared_ptr<ngraph::op::v5::Loop>& op) {
         }
     }
 
-    auto special_body_ports = op->get_special_body_ports();
-    std::string current_iteration_input_name;
-    if (special_body_ports.current_iteration_input_idx >= 0) {
-        auto current_iteration_input = body_inputs.at(special_body_ports.current_iteration_input_idx);
-        current_iteration_input_name = layer_type_name_ID(current_iteration_input);
-    }
-    std::string body_condition_output_name;
-    if (special_body_ports.body_condition_output_idx >= 0) {
-        auto body_condition_output = body_outputs.at(special_body_ports.body_condition_output_idx);
-        body_condition_output_name = layer_type_name_ID(body_condition_output);
-    }
-
     const cldnn::loop loopPrimitive(
         layerName,              /* layer name of this primitive (output id) */
         inputPrimitives,        /* inputs of this layer */
@@ -197,8 +223,8 @@ void CreateLoopOp(Program& p, const std::shared_ptr<ngraph::op::v5::Loop>& op) {
         output_primitive_maps,        /* output mappings connecting outer network and inner network */
         back_edges,             /* back edge mapping */
         num_iterations,         /* max iteration, i.e. length of iteration axis */
-        current_iteration_input_name,
-        body_condition_output_name);
+        body_current_iteration_id,
+        body_execution_condition_id);
 
     p.AddPrimitive(loopPrimitive);
     p.AddPrimitiveToProfiler(op);

@@ -7,6 +7,7 @@
 
 #include "cldnn/primitives/loop.hpp"
 #include "cldnn/primitives/mutable_data.hpp"
+#include "cldnn/primitives/data.hpp"
 #include "cldnn/primitives/input_layout.hpp"
 #include "cldnn/runtime/memory.hpp"
 #include "cldnn/runtime/error_handler.hpp"
@@ -177,10 +178,11 @@ public:
         const topology_map& body_topology_map = body.get_primitives();
         if (!id.empty()) {
             // add input_layout if not exist
+            layout body_input_layout(data_types::i64, format::bfyx, {1, 1, 1, 1});
             if (body_topology_map.find(id) == body_topology_map.end()) {
-                layout body_input_layout(data_types::i64, format::bfyx, {1, 1, 1, 1});
                 body.add(std::make_shared<input_layout>(id, body_input_layout));
             } else {
+#if 0
                 const auto& body_input_prim = body.at(id);
                 CLDNN_ERROR_BOOL(this->id(), "Error while building body program",
                     body_input_prim->type != input_layout::type_id(),
@@ -195,6 +197,15 @@ public:
                 CLDNN_ERROR_BOOL(this->id(), "Error while building body program",
                     input_layout_prim->layout.count() != 1,
                     id + " should have 1 element");
+#else
+                const auto& body_input_prim = body.at(id);
+                const auto input_layout_prim = std::dynamic_pointer_cast<input_layout>(body_input_prim);
+                if (!input_layout_prim) {
+                    CLDNN_ERROR_MESSAGE(this->id(), "Not cldnn::input_layout");
+                } else {
+                    input_layout_prim->change_layout(body_input_layout);
+                }
+#endif
             }
         }
     }
@@ -202,14 +213,15 @@ public:
     void process_single_int_output(const primitive_id& id) const {
         // add mutable if not exist
         const topology_map& body_topology_map = body.get_primitives();
+        layout body_output_layout(data_types::i64, format::bfyx, {1, 1, 1, 1});
         if (!id.empty()) {
-            if (body_topology_map.find(id) == body_topology_map.end()) {
-                layout body_output_layout(data_types::i64, format::bfyx, {1, 1, 1, 1});
-                auto mem_impl = get_program().get_engine().allocate_memory(body_output_layout, 0).detach();
-                cldnn::memory mem(mem_impl);
-                auto md = std::make_shared<cldnn::mutable_data>(id, mem);
+            auto body_output = body_topology_map.find(id);
+            if (body_output == body_topology_map.end()) {
+                auto mem = get_program().get_engine().allocate_memory(body_output_layout);
+                auto md = std::make_shared<data>(id, mem);
                 body.add(md);
             } else {
+#if 0
                 const auto& body_input_prim = body.at(id);
                 CLDNN_ERROR_BOOL(this->id(), "Error while building body program",
                     !static_cast<bool>(body_input_prim->output_data_type),
@@ -217,6 +229,11 @@ public:
                 CLDNN_ERROR_BOOL(this->id(), "Error while building body program",
                     !is_integer(*(body_input_prim->output_data_type)),
                     id + " is not integer type");
+#else
+                auto body_output_prim = body.at(body_output->first);
+                auto mem = get_program().get_engine().allocate_memory(body_output_layout);
+                body_output_prim.reset(new mutable_data(body_output->first, mem));
+#endif
             }
         }
     }
