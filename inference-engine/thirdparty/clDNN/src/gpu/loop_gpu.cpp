@@ -137,6 +137,13 @@ struct loop_gpu : typed_primitive_impl<loop> {
         int64_t current_iteration = 0;
         if (node.is_current_iteration_used()) {
             write_scalar_value(current_iteration_mem, stream, current_iteration);
+            const primitive_id& current_iteration_id = node.get_current_iteration_id();
+            auto current_iteration_prim = body_network->get_primitive(current_iteration_id);
+            if (auto input_layout_prim = std::dynamic_pointer_cast<input_layout_inst>(current_iteration_prim)) {
+                input_layout_prim->set_data(current_iteration_mem);
+            } else {
+                current_iteration_prim->set_output_memory(current_iteration_mem);
+            }
         }
 
         const auto& concatenated_input_mem_mappings = instance.concatenated_input_mem_mappings;
