@@ -302,6 +302,11 @@ public:
             output_names.insert(back_edge.from);
         }
 
+        // if execution_condition_id is specified, we need to add the id in build_option::outputs
+        if (!get_condition_id().empty()) {
+            output_names.insert(get_condition_id());
+        }
+
         auto opts = get_program().get_options();
         std::vector<primitive_id> output_names_vec(output_names.begin(), output_names.end());
         opts.set_option(build_option::outputs(output_names_vec));
