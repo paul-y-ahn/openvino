@@ -26,73 +26,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
     loop_gpu(const loop_gpu& other) : typed_primitive_impl<loop>(other), node(other.node) {}
     explicit loop_gpu(const loop_node& node) : node(node) {}
 
-    // read scala value from data primitive
-    static int64_t read_scalar_value(memory::ptr mem, stream& stream) {
-        int64_t trip_count = 0;
-        const layout& prim_layout = mem->get_layout();
-
-        switch (prim_layout.data_type) {
-        case data_types::u8: {
-            mem_lock<uint8_t> lock_prim_output{mem, stream};
-            trip_count = *lock_prim_output.data();
-            break;
-        }
-        case data_types::i8: {
-            mem_lock<int8_t> lock_prim_output{mem, stream};
-            trip_count = *lock_prim_output.data();
-            break;
-        }
-        case data_types::i32: {
-            mem_lock<int32_t> lock_prim_output{mem, stream};
-            trip_count = *lock_prim_output.data();
-            break;
-        }
-        case data_types::i64: {
-            mem_lock<int64_t> lock_prim_output{mem, stream};
-            trip_count = *lock_prim_output.data();
-            break;
-        }
-        default:
-            assert(false);
-        }
-        return trip_count;
-    }
-
-    static void write_scalar_value(memory::ptr mem, stream& stream, int64_t input) {
-        const layout& prim_layout = mem->get_layout();
-
-        switch (prim_layout.data_type) {
-        case data_types::u8: {
-            assert(input >= std::numeric_limits<uint8_t>::min() &&
-                   input <= std::numeric_limits<uint8_t>::max());
-            mem_lock<uint8_t> lock_prim_output{mem, stream};
-            *lock_prim_output.data() = static_cast<uint8_t>(input);
-            break;
-        }
-        case data_types::i8: {
-            assert(input >= std::numeric_limits<int8_t>::min() &&
-                   input <= std::numeric_limits<int8_t>::max());
-            mem_lock<int8_t> lock_prim_output{mem, stream};
-            *lock_prim_output.data() = static_cast<int8_t>(input);
-            break;
-        }
-        case data_types::i32: {
-            assert(input >= std::numeric_limits<int32_t>::min() &&
-                   input <= std::numeric_limits<int32_t>::max());
-            mem_lock<int32_t> lock_prim_output{mem, stream};
-            *lock_prim_output.data() = static_cast<int32_t>(input);
-            break;
-        }
-        case data_types::i64: {
-            mem_lock<int64_t> lock_prim_output{mem, stream};
-            *lock_prim_output.data() = input;
-            break;
-        }
-        default:
-            assert(false);
-        }
-    }
-
     event::ptr execute_impl(const std::vector<event::ptr>& events, loop_inst& instance) override {
         auto& outer_network = instance.get_network();
         auto& stream = outer_network.get_stream();
@@ -109,7 +42,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         // read trip_count from outer network
         const primitive_id& trip_count_id = node.get_trip_count_id();
         memory::ptr trip_count_mem = outer_network.get_primitive(trip_count_id)->output_memory_ptr();
-        int64_t trip_count = read_scalar_value(trip_count_mem, stream);
+        int64_t trip_count = loop_node::read_scalar_value(trip_count_mem, stream);
         if (trip_count < 0) {
             const int64_t max_iteration = node.get_max_iteration();
             trip_count = max_iteration;
@@ -118,7 +51,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         // read initial execution condition from outer network
         const primitive_id& initial_execution_id = node.get_initial_execution_id();
         memory::ptr initial_execution_mem = outer_network.get_primitive(initial_execution_id)->output_memory_ptr();
-        int64_t execution_condition = read_scalar_value(initial_execution_mem, stream);
+        int64_t execution_condition = loop_node::read_scalar_value(initial_execution_mem, stream);
 
         // shortcut of current_iteration memory in body network (slice of input)
         memory::ptr current_iteration_mem = nullptr;
@@ -136,7 +69,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
 
         int64_t current_iteration = 0;
         if (node.is_current_iteration_used()) {
-            write_scalar_value(current_iteration_mem, stream, current_iteration);
+            loop_node::write_scalar_value(current_iteration_mem, stream, current_iteration);
             const primitive_id& current_iteration_id = node.get_current_iteration_id();
             auto current_iteration_prim = body_network->get_primitive(current_iteration_id);
             if (auto input_layout_prim = std::dynamic_pointer_cast<input_layout_inst>(current_iteration_prim)) {
@@ -197,10 +130,10 @@ struct loop_gpu : typed_primitive_impl<loop> {
             //as they are presented in the ngraph opset document for loop operation.
             //However they are not being used yet and only TensorIterator which has fixed sequence length is being validated.
             if (node.is_current_iteration_used()) {
-                write_scalar_value(current_iteration_mem, stream, current_iteration);
+                loop_node::write_scalar_value(current_iteration_mem, stream, current_iteration);
             }
             if (node.is_execution_condition_used()) {
-                execution_condition = read_scalar_value(execution_condition_mem, stream);
+                execution_condition = loop_node::read_scalar_value(execution_condition_mem, stream);
             }
             // update index & execution condition for the next iteration
             ++current_iteration;
@@ -216,7 +149,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
 
         const primitive_id& num_iteration_id = node.get_num_iteration_id();
         memory::ptr num_actual_iterations_mem = outer_network.get_primitive(num_iteration_id)->output_memory_ptr();
-        write_scalar_value(num_actual_iterations_mem, stream, current_iteration);
+        loop_node::write_scalar_value(num_actual_iterations_mem, stream, current_iteration);
 
         return stream.create_user_event(true);
     }
