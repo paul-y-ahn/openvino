@@ -135,8 +135,8 @@ struct loop : public primitive_base<loop> {
               body(body),
               trip_count_id(trip_count_id),
               initial_execution_id(initial_condition_id),
-              num_iteration_id(num_iteration_id),
-              current_iteration_id(current_iteration_id),
+              num_iteration_id(num_iteration_id), //// loop's output
+              current_iteration_id(current_iteration_id), //// internal variable in body network.
               condition_id(condition_id),
               input_primitive_maps(input_primitive_maps),
               output_primitive_maps(output_primitive_maps),

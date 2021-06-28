@@ -90,7 +90,7 @@ public:
         if (axis < 2) {
             return axis;
         }
-        return (ndim - 1) - (axis - 2);
+        return (ndim - 1) - (axis - 2);//메모리 오더 인덱스 (bfxyz)
     }
 
     // read scala value from data primitive
@@ -288,15 +288,21 @@ public:
     void build_body_program() const {
         const std::vector<cldnn::program_node *>& deps = get_dependencies();
         // setup internal inputs
+        //// 바디 네트웍의 인풋들을 셋업을 해준다.
+        //// Setting means that get all inputs of loop and calculate body network's input layout using loop's input layout.
+        //// Change input layout through calculated body network input layout, if not exist, add new input layout to the body network.
         const primitive_id& trip_count_id = get_trip_count_id();
         const primitive_id& initial_execution = get_initial_execution_id();
         const primitive_id& num_iteration = get_num_iteration_id();
-        for (const cldnn::program_node * dep : deps) {
-            const primitive_id& id = dep->id();
-            if (id == trip_count_id || id == initial_execution || id == num_iteration) {
-                continue;
-            }
+        // for (const cldnn::program_node * dep : deps) {
+        //     //// Question.3. why deps?
+        //     const primitive_id& id = dep->id();
+        //     if (id == trip_count_id || id == initial_execution || id == num_iteration) {
+        //         continue;
+        //     }
+        //// 기능적으로 dep 이 아래의 loop이랑 연관이 없어보이나 테스트 필요함.
 
+            //// Question.4: need more description front condition is not related to the current loop?
             for (const auto& pm : input_primitive_maps) {
                 layout calculated_layout = calc_body_input_layout(pm);
                 const primitive_id& internal_input_id = pm.internal_id;
@@ -308,12 +314,14 @@ public:
                     body.change_input_layout(internal_input_id, calculated_layout);
                 }
             }
-        }
+        // }
 
         // setup internal output
+        //// In build program, output should be set to the output setup argument
         if (output_primitive_maps.empty()) {
             CLDNN_ERROR_MESSAGE(this->id(), "output primitive map should have at least 1 mapping");
         }
+        //// Set 0-th output's internal id of body network to the output primitive id
         std::set<primitive_id> output_names;
         output_names.insert(output_primitive_maps.front().internal_id);
 
@@ -321,6 +329,7 @@ public:
         process_current_iteration();
         process_single_int_output(get_condition_id());
 
+        //// Add output names for the backedges which needs to go out as output.
         // setup outputs for backedges
         for (auto& back_edge : back_edges) {
             // check whether the back_edge.to has its corresponding io_primitive_map
@@ -348,7 +357,18 @@ public:
         auto opts = get_program().get_options();
         std::vector<primitive_id> output_names_vec(output_names.begin(), output_names.end());
         opts.set_option(build_option::outputs(output_names_vec));
-        body_program = program_impl::build_program(get_program().get_engine(), body, opts, false, false, true);
+        //// TODO(eunsoo): move is_body_program to build_options?
+        //// 특정 optimization path가 body program을 빌드하는 도중에는 하면 안되는 경우가 있어서 그것을 표시하기 위해서 is_body_program을 추가
+        //// 블라드미르 희망사항: 제대로 해결하는게 좋지 않을까하는....
+        //// 바디네트웍일 경우 크랍을 최적화하면 안되는 것이 이슈인데 정말 크랍때문인 것인지
+        //// 크랍이 옵트아웃되어 Reshape 이 비효율적으로 되는 것이 제대로 해결하는 게 낫다...
+        //// 크랍을 옵트아웃되지 못하게 바디넷일경우에만 못하게 하는 것이 아닌 제대로된 해결책을 찾는것이 좋을 것 같다.
+        body_program = program_impl::build_program(get_program().get_engine(),
+            body, //// body_topology
+            opts,   //// build_option
+            false,  //// is_internal
+            false,  //// no_optimization
+            true);  //// is_body_program
     }
 
     const primitive_id& get_trip_count_id() const { return get_primitive()->trip_count_id; }

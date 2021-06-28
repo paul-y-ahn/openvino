@@ -32,6 +32,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
 
         auto body_network = instance.get_body_network();
 
+        //// 아래의 이터레이션에서 인풋과 아웃풋 메모리를 바로 가져올 수 있도로 미리 계산해두는 부분.
         if (!instance.preproc_memories_done) {
             instance.preprocess_output_memory();
             instance.preprocess_input_memory();
@@ -66,6 +67,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         memory::ptr initial_execution_mem = outer_network.get_primitive(initial_execution_id)->output_memory_ptr();
         int64_t execution_condition = loop_node::read_scalar_value(initial_execution_mem, stream);
 
+        //// current_iteration execution_condition이 TI에서는 사용되지 않음.
         // shortcut of execution_condition memory in body network
         memory::ptr execution_condition_mem = nullptr;
         if (node.is_execution_condition_used()) {
@@ -73,11 +75,11 @@ struct loop_gpu : typed_primitive_impl<loop> {
             execution_condition_mem = body_network->get_primitive(condition_id)->output_memory_ptr();
         }
 
-
         const auto& concatenated_input_mem_mappings = instance.concatenated_input_mem_mappings;
         const auto& concatenated_output_mem_mappings = instance.concatenated_output_mem_mappings;
 
         // Set sliced input data
+        //// 바디네트웍을 실행위해서 set input data를 무조건 한번은 해주어야 함.
         for (size_t i = 0; i < concatenated_input_mem_mappings.size(); ++i) {
             const auto& concatenated_input = concatenated_input_mem_mappings.at(i);
             memory::ptr mem = concatenated_input.get_sliced_mem(0);
@@ -88,27 +90,43 @@ struct loop_gpu : typed_primitive_impl<loop> {
             }
         }
 
+        //// 이터레이션간의 이벤트들을 관리. 현재의 이벤트를 다음 익스큐션에게 넘겨주기 위해서 필요한 것
+        //// 처음에는 룹이전의 노드들의 이벤트들이 저장되어 있음.
         std::vector<event::ptr> loop_carried_dep(events.begin(), events.end());
         int64_t current_iteration_idx = 0;
         while (current_iteration_idx < trip_count && execution_condition) {
+            //// Question.8. loop and TI only have concat input?
             // Copy & Set sliced input memory
+            //// loop input 과 body input 연결
             for (size_t i = 0; i < concatenated_input_mem_mappings.size(); ++i) {
                 const auto& concatenated_input = concatenated_input_mem_mappings.at(i);
                 memory::ptr mem = concatenated_input.get_sliced_mem(current_iteration_idx);
+                //// iteration에 해당하는 인풋 메모리를 아웃풋 메모리에 셋팅하는 것
+                //// Question.9. 이부분에서 현재의 인풋에서 아웃풋 메모리를 셋팅하면 그 다음 이터레이션의 인풋으로 연결되는 것인가?
                 if (mem) {
+                    //// Remove dependencies between iteration
+                    //// - use set_output_memory() api to share memory between previous iteration's output and next iteration's input
+                    //// - Each iteration's sliced input has its own memory
+                    //// - Run body_network->execute() with the events from the previous iteration execution to ensure execution order
                     concatenated_input.sliced_data_prim->set_output_memory(mem);
                 } else {
                     CLDNN_ERROR_MESSAGE(node.id(), "sliced input memory of loop is not allocated properly");
                 }
             }
+            /// concatenated_input_mem_mappings
+            /// input     output
+            ///  1          0
+            ///  2          1
 
             // Set backedges
+            /// 백엣지 메모리 셋팅
             for (const auto& backedge_memory_mapping : instance.backedge_memory_mappings) {
                 backedge_memory_mapping.setup_iteration(current_iteration_idx);
             }
 
             // Set sliced output memory
             for (const auto& concat_output_mem_mapping : concatenated_output_mem_mappings) {
+                //// 인풋과 아웃풋을 셋팅하도록 하는 함수
                 concat_output_mem_mapping.setup_concatenated_output_memory(current_iteration_idx);
             }
 
@@ -138,6 +156,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
         // Concatenate sliced output to the outer network
         for (size_t i = 0; i < concatenated_output_mem_mappings.size(); ++i) {
             const auto& concat_output = concatenated_output_mem_mappings.at(i);
+            //// 미리 계산해놓은 오프셋하고 바이트 사이즈만큼 카피하도록 해놓음.
             concat_output.restore_concatenated_mem();
         }
 

@@ -60,24 +60,32 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
 
     // get body topology from ngraph function
     InferenceEngine::CNNNetwork body_network(op->get_body());
+    //// 실제 빌드를 하지 않고 토폴로지만 가져오기 위해서 마지막 부분에 bool 값을 넣어주게 수정함.
     Program body_program(body_network, p.GetEnginePtr(), p.GetConfig(), true);
     auto body_topology = *body_program.GetTopology();
 
+    //// loop  밖에서 사용하는 input과 body_network 에서 사용하는 input을 연결해주는 작업
     // setup input_primitive_maps/ output_primitive_maps and back_edges
-    const auto& loop_input_descs = op->get_input_descriptions();
-    const auto& loop_output_descs = op->get_output_descriptions();
-    const auto& body_inputs = op->get_body()->get_parameters();
-    const auto& body_outputs = op->get_body()->get_results();
+    const auto& loop_input_descs = op->get_input_descriptions(); //// relation info between loop input and body_net input
+    const auto& loop_output_descs = op->get_output_descriptions(); //// relation info between loop output and body_net output
+    const auto& body_inputs = op->get_body()->get_parameters(); //// list of body network inputs
+    const auto& body_outputs = op->get_body()->get_results(); //// list of body network outputs
 
+    //// Set the map for the relation info between loop's input and body_network's input
     std::vector<cldnn::loop::io_primitive_map> input_primitive_maps;
+    //// Set the map for the relation info between loop's output and body_network's output
     std::vector<cldnn::loop::io_primitive_map> output_primitive_maps;
     std::vector<cldnn::loop::backedge_mapping> back_edges;
     std::map<cldnn::primitive_id, cldnn::primitive_id> reordered_output_ids;
 
     // set input mapping & back edges
     for (const auto& loop_input_desc : loop_input_descs) {
+        //// Important: find loop's input layer primitive id and body network's input layer primitive id
+        //// loop_input_desc has the relation between external_id and internal_id
+        //// external_id is loop's input primitive_id
         const cldnn::primitive_id& external_id = inputPrimitives.at(loop_input_desc->m_input_index);
         auto& body_input = body_inputs.at(loop_input_desc->m_body_parameter_index);
+        //// internal_id is body_network's id
         cldnn::primitive_id internal_id = layer_type_name_ID(body_input);
 
         // set input mapping
@@ -86,21 +94,35 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
             // sliced input
             input_primitive_maps.emplace_back(external_id, internal_id, sliceInfo->m_axis,
                 sliceInfo->m_start, sliceInfo->m_end, sliceInfo->m_stride);
+            //// loop input data를 조각을 내서 해당 이터레이션에 맞게 넣어주도록 하는 작업을 할 수 있는 정보를 넣어줌.
+            //// forward, backward(거꾸로 마지막부터 들어가는 것)
+            //// 예를 들어, [16, 10, 20], axis = 1 일 경우 가운데 10 을 기준으로 10개의 조각을 16 x 20 씩 해서 넣어주겠다는 뜻임.
+            //// axis 는 어느 dimension으로 슬라이싱을 할 것인지 정해주는 것
+            //// Start, End, Stride는 어떤 방법으로 슬라이싱을 할 것인지 정해주는 것
+            //// 예를 들어 [16, 10, 20], axis = 1, start = 0, end = 10, stride = 1 이라고 하면
+            //// 0부터 9까지 한개씩 슬라이싱을 해서 인풋으로 넣어주겠다는 것임.
+            //// [16, 10, 20], axis = 1, start = 9, end = -1, stride = -1 이면 9부터 0 까지 거꾸로 하나씩 슬라이싱해서 인풋으로 넣어주겠다는 뜻임.
         } else {
             // input without slicing
+            //// has only one input data
             input_primitive_maps.emplace_back(external_id, internal_id);
         }
 
         // set back edges
+        //// merged 라는 말이붙은 것은 loop input 에서도 가져오고 body_network output에서도 가져오기 때문에 붙여진 듯.
         if (const auto& mergedInput =
             std::dynamic_pointer_cast<TensorIterator::MergedInputDescription>(loop_input_desc)) {
             // backedge
-            const auto& to = body_inputs.at(mergedInput->m_body_parameter_index);
-            const auto& from = body_outputs.at(mergedInput->m_body_value_index);
+            const auto& to = body_inputs.at(mergedInput->m_body_parameter_index); //// ngraph 상의 인풋노드
+            const auto& from = body_outputs.at(mergedInput->m_body_value_index); //// ngraph 상의 아웃풋 노드
+            //// 아웃풋을 인풋으로 연결해주는 작업
 
             cldnn::primitive_id to_id = layer_type_name_ID(to);
             cldnn::primitive_id from_id = layer_type_name_ID(from);
 
+            //// CNNNetwork를 거치게되면 FP16 아웃풋도  I32, FP32로 나오기 때문에 이를 그대로 쓸경우
+            //// 바디 네트웍이 fp16이게 되면 backedge copy시에 precision이 맞지 않게 되어 문제가 생김.
+            //// 따라서 backedge의 인풋 아웃풋의 타입이 항상 같도록 input precision type으로 output precision type을 맞춰줌.
             // reset output data type because the data types of the outputs of the
             // body topology are always FP32 regardless of ngraph data type
             {
@@ -136,6 +158,8 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
         p.AddPrimitive(execution_condition);
         p.AddInnerPrimitiveToProfiler(execution_condition_id, layerName, op);
     }
+    //// 실제로 이터레이션이 몇번 돌았는지 알려주는 정보
+    //// 왜 뮤터블인지는 좀 이해가 안되는군....
     const cldnn::primitive_id num_iteration_id = layerName + "_numIteration";
     {
         cldnn::mutable_data num_iteration = CreateScalarData<cldnn::mutable_data>(p, num_iteration_id, 0);
@@ -149,19 +173,25 @@ void CreateTensorIteratorOp(Program &p, const std::shared_ptr<TensorIterator> &o
     for (const auto& loop_output_desc : loop_output_descs) {
         const uint64_t output_idx = loop_output_desc->m_output_index;
 
+        //// loop 안에서 여러개의 아웃풋을 지원하기 위한 코드임.
+        //// cldnn 은 기본적으로 한 primitive 안에서는 아웃풋이 한개만 나오게 되어 있는데
+        //// 일부 functional test 에서는 여러개의 아웃풋을 지원해야하는 경우가 있었음.
+        //// output index가 0 일때는 그냥 loop 이랑 loop.0으로 두개 만들어주고
+        //// output index가 0 보다 클 경우 loop.0, loop.1 네이밍을 해서 만듬.
         // Add additional mutable_data for multiple outputs
         // primitive ID should be <TI primitive ID>.<output_idx> if output_idx > 0
         // otherwise primitive ID should be equals to TI primitive ID
         const std::string layerNameWithIndex = layerName + "." + std::to_string(output_idx);
         std::string external_id;
         if (output_idx > 0) {
+            //// 뮤터블 데이터로 만들어서 추가를 해주어야 한다. 
             cldnn::mutable_data output_data = CreateAdditionalOutputData(p, op, layerNameWithIndex, layerName, output_idx);
             p.AddPrimitive(output_data);
             p.AddInnerPrimitiveToProfiler(layerNameWithIndex, layerName, op);
             p.primitiveIDs[layerNameWithIndex] = layerNameWithIndex;
             external_id = layerNameWithIndex;
         } else {
-            p.primitiveIDs[layerNameWithIndex] = layerName;
+            p.primitiveIDs[layerNameWithIndex] = layerName; //// execution graph에서 여러개의 아웃풋이 나오도록 하려고 추가.
             p.primitiveIDs[layerName] = layerName;
             external_id = layerName;
         }

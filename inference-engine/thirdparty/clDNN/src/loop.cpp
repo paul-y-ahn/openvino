@@ -78,7 +78,13 @@ static void validate_backedges(loop_node const & node) {
     }
 }
 
+//// loop output 의 shape 이 어떻게 되는지 계산하는 함수
 layout loop_inst::calc_output_layout(loop_node const & node) {
+    //// 기구현된 토폴리지를 이용해서 바디프로그램을 빌드한다.
+    //// 바디 프로그램을 빌드할 때 loop의 인풋 레이아웃을 가져와 바디의 인풋 레이아웃으로 연결하고 빌드를 하낟.
+    //// 왜 이시점인가?
+    //// 앞서 calc output_layout을 계산하기 위해서는 loop의 인풋 프리미티브들의 아웃풋 레이아웃을 알아야하는데
+    //// 이 단계가 아니면 그 레이아웃을 알수가 없다.
     // body program should be built here to calculate body input layout
     // from outputs of loop's dependency and calculate loop output layout
     // from the outputs of body program
@@ -100,7 +106,7 @@ layout loop_inst::calc_output_layout(loop_node const & node) {
     // finds internal output
     const auto& output_primitive_maps = node.get_output_primitive_maps();
     const auto& output_mapping = output_primitive_maps.front();
-    const auto& body_outputs = node.get_body_program()->get_outputs();
+    const auto& body_outputs = node.get_body_program()->get_outputs();  //// 아웃풋을 가져와서
     const primitive_id& output_internal_id = output_mapping.internal_id;
     auto target = std::find_if(body_outputs.begin(), body_outputs.end(), [&](const cldnn::program_node * output) {
         return output->id() == output_internal_id;
@@ -112,7 +118,9 @@ layout loop_inst::calc_output_layout(loop_node const & node) {
     // set body output layout
     layout loop_output_layout = (*target)->get_output_layout();
     const int64_t axis_to_iterate_throgh = output_mapping.axis;
-    if (axis_to_iterate_throgh != -1) {
+    if (axis_to_iterate_throgh != -1) { //// 아웃풋을 concat을 할필요가 있을 경우
+        //// 첫번째 아웃풋에 대한 계산만 하게 되어 있음.
+        //// Question.2. 이부분에 대한 자세한 질문을 해야할 듯. 특히 convert_to_raw_axis 코드가 왜 그렇게 해서 raw_axis를 구하는 것인지 ....
         const auto shape = loop_output_layout.size.sizes(loop_output_layout.format);
         const size_t ndim = shape.size();
         const size_t raw_axis = node.convert_to_raw_axis(axis_to_iterate_throgh, static_cast<int>(ndim));
@@ -201,13 +209,17 @@ void loop_inst::preprocess_output_memory() {
         const primitive_id& external_id = output_mapping.external_id;
         const primitive_id& internal_id = output_mapping.internal_id;
         if (output_mapping.axis < 0) {
+            //// Concat을 안하는 경우
+            //// loop의 아웃풋 메모리를 바디네트웍에 아웃풋으로 셋팅(shared memory)
             memory::ptr memory = get_external_memory(external_id);
             body_network->get_primitive(internal_id)->set_output_memory(memory);
         } else {
+            //// Concat을 해야하는 경우
             memory::ptr to_mem = get_external_memory(external_id);
             auto output_prim = body_network->get_primitive(internal_id);
             layout sliced_layout = output_prim->output_memory().get_layout();
 
+            //// 이터레이션 갯수만큼 메모리 할당.
             const int64_t max_iteration = node.get_max_iteration();
             std::vector<memory::ptr> sliced_mems;
             sliced_mems.reserve(max_iteration);
@@ -224,6 +236,7 @@ void loop_inst::preprocess_output_memory() {
                 output_mapping.axis, to_mem, sliced_mems, _network.get_stream(),
                 num_elements_iteration, output_mapping.stride, start);
             memory_mapping_info.concat_data_prim = body_network->get_primitive(internal_id);
+            //// 최종적으로 아웃풋의 어느 지점에 카피를 할 지 정하는데 필요한 정보를 셋팅.
             concatenated_output_mem_mappings.push_back(memory_mapping_info);
         }
     }
@@ -253,6 +266,7 @@ void loop_inst::preprocess_input_memory() {
                 const int64_t max_iteration = node.get_max_iteration();
                 std::vector<memory::ptr> sliced_mems;
                 sliced_mems.reserve(max_iteration);
+                //// 이터레이션 갯수만큼 메모리 할당.
                 for (int j=0; j < max_iteration; ++j) {
                     memory::ptr sliced_mem = engine.allocate_memory(sliced_layout, 0);
                     sliced_mems.push_back(sliced_mem);
@@ -265,11 +279,13 @@ void loop_inst::preprocess_input_memory() {
                     input_map->axis, memory, sliced_mems, _network.get_stream(),
                     num_elements_iteration, input_map->stride, start);
                 concatenated_input_mem_mapping_info.sliced_data_prim = body_network->get_primitive(input_map->internal_id);
+                //// 오프셋과 바이트 사이즈 정보를 추가함.
                 iteration_mem.push_back(concatenated_input_mem_mapping_info);
             } else {
                 if (memory->get_layout().data_type != body_network->get_primitive(input_map->internal_id)->output_memory().get_layout().data_type) {
                     CLDNN_ERROR_MESSAGE(id(), "incompatible datatypes");
                 }
+                //// 메모리를 공유할 수 있게 공유함.
                 body_network->set_input_data(input_map->internal_id, memory);
             }
         }
@@ -350,6 +366,7 @@ memory::ptr loop_inst::get_external_memory(const primitive_id& external_id) cons
     return outputPrim->output_memory_ptr();
 }
 
+//// allocate all mems for body program
 loop_inst::typed_primitive_inst(network_impl & network, loop_node const & node)
     : parent(network, node),
       preproc_memories_done(false),

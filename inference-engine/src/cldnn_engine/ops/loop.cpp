@@ -95,6 +95,9 @@ void CreateLoopOp(Program& p, const std::shared_ptr<Loop>& op) {
     const auto& body_inputs = op->get_function()->get_parameters();
     const auto& body_outputs = op->get_function()->get_results();
 
+    //// Question.1. TensorIterator에서는 get_body()인데 여기서는 왜 get_function() 을 사용하는 것인가?
+    //// get_function은 get_body의 wrapper 같은데 특별한 이유가 있는 것인지?
+    //// 차이가 없음.
     InferenceEngine::CNNNetwork body_network(op->get_function());
     auto networkInputs = body_network.getInputsInfo();
     auto networkOutputs = body_network.getOutputsInfo();
