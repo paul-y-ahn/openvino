@@ -354,6 +354,7 @@ public:
             from_primitive(from_primitive),
             to_primitive(to_primitive),
             from_mems(from_mems),
+            initial_mem(initial_mem),
             stream(stream),
             type(type),
             total_bytes(initial_mem->get_layout().bytes_count()) {
