@@ -68,6 +68,25 @@ static std::string GetExternalInputName(const int64_t body_parameter_index,
     return {""};
 }
 
+static InferenceEngine::Precision GetPrecisionFromNgraphType(ngraph::element::Type_t type) {
+#define CASE(ngraph_type, ie_type) \
+    case ngraph::element::ngraph_type: \
+        return InferenceEngine::Precision::ePrecision::ie_type;
+    switch (type) {
+        CASE(i8, I8)
+        CASE(i16, I16)
+        CASE(i32, I32)
+        CASE(i64, I64)
+        CASE(u8, U8)
+        CASE(u16, U16)
+        CASE(u32, U32)
+        CASE(u64, U64)
+    }
+#undef CASE
+    throw std::runtime_error("not integer type");
+    return {};
+}
+
 void CreateLoopOp(Program& p, const std::shared_ptr<Loop>& op) {
     const std::string layerName = layer_type_name_ID(op);
     auto inputPrimitives = p.GetInputPrimitiveIDs(op);
@@ -90,7 +109,8 @@ void CreateLoopOp(Program& p, const std::shared_ptr<Loop>& op) {
         std::string input_name = ngraph::op::util::create_ie_output_name(current_iteration_input);
         const auto networkInput = networkInputs.at(input_name);
         if (networkInput->getPrecision().is_float()) {
-            networkInput->setPrecision(InferenceEngine::Precision::I64);
+            auto precision = GetPrecisionFromNgraphType(current_iteration_input->get_element_type());
+            networkInput->setPrecision(precision);
         }
     }
 

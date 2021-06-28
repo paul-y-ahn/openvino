@@ -126,15 +126,14 @@ struct loop_gpu : typed_primitive_impl<loop> {
                 loop_carried_dep.emplace_back(body_event);
             }
 
-            //TODO: "curreint_iteration primitive and execution_condition is prepared
-            //as they are presented in the ngraph opset document for loop operation.
-            //However they are not being used yet and only TensorIterator which has fixed sequence length is being validated.
-            if (node.is_current_iteration_used()) {
-                loop_node::write_scalar_value(current_iteration_mem, stream, current_iteration);
-            }
+            //TODO: execution_condition is prepared as they are presented in the
+            //      ngraph opset document for loop operation.
+            // However they are not being used yet and only TensorIterator which
+            // has fixed sequence length is being validated.
             if (node.is_execution_condition_used()) {
                 execution_condition = loop_node::read_scalar_value(execution_condition_mem, stream);
             }
+
             // update index & execution condition for the next iteration
             ++current_iteration;
         }
