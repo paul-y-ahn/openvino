@@ -36,6 +36,19 @@ struct loop_gpu : typed_primitive_impl<loop> {
             instance.preprocess_output_memory();
             instance.preprocess_input_memory();
             instance.preprocess_backedge_memory();
+
+            // set input data for current_iteration primitive if current_iteration is used
+            if (node.is_current_iteration_used()) {
+                const primitive_id& current_iteration_id = node.get_current_iteration_id();
+                auto current_iteration_prim = body_network->get_primitive(current_iteration_id);
+                auto input_layout_prim = std::dynamic_pointer_cast<input_layout_inst>(current_iteration_prim);
+                if (input_layout_prim == nullptr) {
+                    CLDNN_ERROR_MESSAGE(node.id(), "current_iteration primitive is not input_layout");
+                }
+
+                const auto& backedge_mapping = instance.get_current_iteration_backedge_mapping();
+                input_layout_prim->set_data(backedge_mapping.initial_mem);
+            }
             instance.preproc_memories_done = true;
         }
 
@@ -53,13 +66,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
         memory::ptr initial_execution_mem = outer_network.get_primitive(initial_execution_id)->output_memory_ptr();
         int64_t execution_condition = loop_node::read_scalar_value(initial_execution_mem, stream);
 
-        // shortcut of current_iteration memory in body network (slice of input)
-        memory::ptr current_iteration_mem = nullptr;
-        if (node.is_current_iteration_used()) {
-            const primitive_id& current_iteration_id = node.get_current_iteration_id();
-            current_iteration_mem = body_network->get_primitive(current_iteration_id)->output_memory_ptr();
-        }
-
         // shortcut of execution_condition memory in body network
         memory::ptr execution_condition_mem = nullptr;
         if (node.is_execution_condition_used()) {
@@ -67,17 +73,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
             execution_condition_mem = body_network->get_primitive(condition_id)->output_memory_ptr();
         }
 
-        int64_t current_iteration = 0;
-        if (node.is_current_iteration_used()) {
-            loop_node::write_scalar_value(current_iteration_mem, stream, current_iteration);
-            const primitive_id& current_iteration_id = node.get_current_iteration_id();
-            auto current_iteration_prim = body_network->get_primitive(current_iteration_id);
-            if (auto input_layout_prim = std::dynamic_pointer_cast<input_layout_inst>(current_iteration_prim)) {
-                input_layout_prim->set_data(current_iteration_mem);
-            } else {
-                current_iteration_prim->set_output_memory(current_iteration_mem);
-            }
-        }
 
         const auto& concatenated_input_mem_mappings = instance.concatenated_input_mem_mappings;
         const auto& concatenated_output_mem_mappings = instance.concatenated_output_mem_mappings;
@@ -94,12 +89,12 @@ struct loop_gpu : typed_primitive_impl<loop> {
         }
 
         std::vector<event::ptr> loop_carried_dep(events.begin(), events.end());
-
-        while (current_iteration < trip_count && execution_condition) {
+        int64_t current_iteration_idx = 0;
+        while (current_iteration_idx < trip_count && execution_condition) {
             // Copy & Set sliced input memory
             for (size_t i = 0; i < concatenated_input_mem_mappings.size(); ++i) {
                 const auto& concatenated_input = concatenated_input_mem_mappings.at(i);
-                memory::ptr mem = concatenated_input.get_sliced_mem(current_iteration);
+                memory::ptr mem = concatenated_input.get_sliced_mem(current_iteration_idx);
                 if (mem) {
                     concatenated_input.sliced_data_prim->set_output_memory(mem);
                 } else {
@@ -109,12 +104,12 @@ struct loop_gpu : typed_primitive_impl<loop> {
 
             // Set backedges
             for (const auto& backedge_memory_mapping : instance.backedge_memory_mappings) {
-                backedge_memory_mapping.setup_iteration(current_iteration);
+                backedge_memory_mapping.setup_iteration(current_iteration_idx);
             }
 
             // Set sliced output memory
             for (const auto& concat_output_mem_mapping : concatenated_output_mem_mappings) {
-                concat_output_mem_mapping.setup_concatenated_output_memory(current_iteration);
+                concat_output_mem_mapping.setup_concatenated_output_memory(current_iteration_idx);
             }
 
             // execute body network
@@ -135,7 +130,7 @@ struct loop_gpu : typed_primitive_impl<loop> {
             }
 
             // update index & execution condition for the next iteration
-            ++current_iteration;
+            ++current_iteration_idx;
         }
 
         body_network->reset_execution();
@@ -146,9 +141,19 @@ struct loop_gpu : typed_primitive_impl<loop> {
             concat_output.restore_concatenated_mem();
         }
 
+        // update num_iterations (actual number of iterations)
+        int64_t actual_iterations = 0;
+        if (node.is_current_iteration_used()) {
+            const auto& backedge_mapping = instance.get_current_iteration_backedge_mapping();
+            auto current_iteration_mem = backedge_mapping.from_primitive->output_memory_ptr();
+            actual_iterations = loop_node::read_scalar_value(current_iteration_mem, stream);
+        } else {
+            actual_iterations = current_iteration_idx;
+        }
+
         const primitive_id& num_iteration_id = node.get_num_iteration_id();
         memory::ptr num_actual_iterations_mem = outer_network.get_primitive(num_iteration_id)->output_memory_ptr();
-        loop_node::write_scalar_value(num_actual_iterations_mem, stream, current_iteration);
+        loop_node::write_scalar_value(num_actual_iterations_mem, stream, actual_iterations);
 
         return stream.create_user_event(true);
     }
