@@ -555,6 +555,7 @@ private:
     std::vector<concatenated_memory_mapping> concatenated_output_mem_mappings;
 
     static std::string to_string(const loop_node& node);
+    size_t current_iteratoin_backedge_mapping_idx = 0;
 
 public:
     typed_primitive_inst(network_impl& network, const loop_node& node);
@@ -562,6 +563,12 @@ public:
     void preprocess_input_memory();
     void preprocess_output_memory();
     void preprocess_backedge_memory();
+    const backedge_memory_mapping& get_current_iteration_backedge_mapping() const {
+        if (!node.is_current_iteration_used()) {
+            CLDNN_ERROR_MESSAGE(node.id(), "no backedge mapping for current_iteration");
+        }
+        return backedge_memory_mappings.at(current_iteratoin_backedge_mapping_idx);
+    }
 
 private:
     network_impl::ptr body_network;

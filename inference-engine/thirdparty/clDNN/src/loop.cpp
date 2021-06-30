@@ -291,6 +291,7 @@ void loop_inst::preprocess_backedge_memory() {
             initial_mem = get_network().get_engine().allocate_memory(current_iteration_layout);
             auto& stream = get_network().get_stream();
             loop_node::write_scalar_value(initial_mem, stream, 0);
+            current_iteratoin_backedge_mapping_idx = backedge_memory_mappings.size();
         } else {
             if (input_map_ptrs.size() == 0) {
                 CLDNN_ERROR_MESSAGE(id(), "no input_mapping for backedged input");
