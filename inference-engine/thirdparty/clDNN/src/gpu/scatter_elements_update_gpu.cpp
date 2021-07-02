@@ -46,7 +46,7 @@ public:
     static primitive_impl* create(const scatter_elements_update_node& arg) {
         auto scatter_elements_update_params = get_default_params<kernel_selector::scatter_elements_update_params>(arg);
         auto scatter_elements_update_optional_params =
-            get_default_optional_params<kernel_selector::scatter_elements_update_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::scatter_elements_update_optional_params>(arg);
 
         scatter_elements_update_params.axis = convert_axis(arg.get_primitive()->axis, arg);
 

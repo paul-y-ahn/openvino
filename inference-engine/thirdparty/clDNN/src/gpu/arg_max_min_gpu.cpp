@@ -47,7 +47,7 @@ public:
 
         auto argm_params = get_default_params<kernel_selector::arg_max_min_params>(arg);
         auto argm_optional_params =
-            get_default_optional_params<kernel_selector::arg_max_min_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::arg_max_min_optional_params>(arg);
 
         argm_params.outputs_num = outputs_num;
         argm_params.topK = top_k;

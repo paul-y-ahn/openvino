@@ -81,7 +81,7 @@ public:
 
         auto roi_params = get_default_params<kernel_selector::roi_pooling_params>(arg);
         auto roi_optional_params =
-            get_default_optional_params<kernel_selector::roi_pooling_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::roi_pooling_optional_params>(arg);
 
         const auto roi_bfyx = convert_data_tensor(rois_layout);
         const auto roi_bf = roi_bfyx.FlattenFeatureAndSpatials();

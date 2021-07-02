@@ -28,7 +28,7 @@ struct mvn_gpu : typed_primitive_gpu_impl<mvn> {
 public:
     static primitive_impl* create(const mvn_node& arg) {
         auto mvn_params = get_default_params<kernel_selector::mvn_params>(arg);
-        auto mvn_optional_params = get_default_optional_params<kernel_selector::mvn_optional_params>(arg.get_program());
+        auto mvn_optional_params = get_default_optional_params<kernel_selector::mvn_optional_params>(arg);
 
         mvn_params.mvnMode = arg.get_primitive()->across_channels ? kernel_selector::mvn_mode::ACROSS_CHANNELS
                                                                   : kernel_selector::mvn_mode::WITHIN_CHANNELS;

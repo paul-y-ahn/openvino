@@ -23,7 +23,7 @@ struct lrn_gpu : typed_primitive_gpu_impl<lrn> {
 
     static primitive_impl* create(const lrn_node& arg) {
         auto lrn_params = get_default_params<kernel_selector::lrn_params>(arg);
-        auto lrn_optional_params = get_default_optional_params<kernel_selector::lrn_optional_params>(arg.get_program());
+        auto lrn_optional_params = get_default_optional_params<kernel_selector::lrn_optional_params>(arg);
 
         const auto& primitive = arg.get_primitive();
 

@@ -29,7 +29,7 @@ public:
 
         auto reorder_params = get_default_params<kernel_selector::reshape_params>(arg);
         auto reorder_optional_params =
-            get_default_optional_params<kernel_selector::reshape_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::reshape_optional_params>(arg);
 
         auto& kernel_selector = kernel_selector::reshape_kernel_selector::Instance();
         auto best_kernels = kernel_selector.GetBestKernels(reorder_params, reorder_optional_params);

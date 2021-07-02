@@ -86,7 +86,7 @@ public:
 
         auto pool_params = get_default_params<kernel_selector::pooling_params>(arg);
         auto pool_optional_params =
-            get_default_optional_params<kernel_selector::pooling_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::pooling_optional_params>(arg);
 
         const auto primitive = arg.get_primitive();
         const auto& stride = primitive->stride;

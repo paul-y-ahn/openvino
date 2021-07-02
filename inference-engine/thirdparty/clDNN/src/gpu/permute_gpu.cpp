@@ -26,7 +26,7 @@ struct permute_gpu : typed_primitive_gpu_impl<permute> {
     static primitive_impl* create(const permute_node& arg) {
         auto permute_params = get_default_params<kernel_selector::permute_params>(arg);
         auto permute_optional_params =
-            get_default_optional_params<kernel_selector::permute_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::permute_optional_params>(arg);
 
         const auto& permute_order = arg.get_primitive()->permute_order;
         permute_params.order = permute_order;

@@ -46,7 +46,7 @@ public:
     static primitive_impl* create(const quantize_node& arg) {
         auto quantize_params = get_default_params<kernel_selector::quantize_params>(arg);
         auto quantize_optional_params =
-            get_default_optional_params<kernel_selector::quantize_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::quantize_optional_params>(arg);
 
         quantize_params.levels = arg.get_levels();
         quantize_params.packed_binary_output = arg.get_packed_binary_output();

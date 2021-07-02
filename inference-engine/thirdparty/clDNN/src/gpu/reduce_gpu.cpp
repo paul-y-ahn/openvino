@@ -60,7 +60,7 @@ struct reduce_gpu : typed_primitive_gpu_impl<reduce> {
 public:
     static primitive_impl* create(const reduce_node& arg) {
         auto reduce_params = get_default_params<kernel_selector::reduce_params>(arg);
-        auto reduce_optional_params = get_default_optional_params<kernel_selector::reduce_optional_params>(arg.get_program());
+        auto reduce_optional_params = get_default_optional_params<kernel_selector::reduce_optional_params>(arg);
 
         reduce_params.reduceAxes = arg.get_primitive()->axes;
         reduce_params.keepDims = arg.get_primitive()->keep_dims;

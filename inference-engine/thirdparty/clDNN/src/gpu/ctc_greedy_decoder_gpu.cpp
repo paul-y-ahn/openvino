@@ -28,7 +28,7 @@ struct ctc_greedy_decoder_gpu : typed_primitive_gpu_impl<ctc_greedy_decoder> {
 public:
     static primitive_impl* create(const ctc_greedy_decoder_node& arg) {
         auto ctc_gd_params = get_default_params<kernel_selector::ctc_greedy_decoder_params>(arg);
-        auto ctc_gd_optional_params = get_default_optional_params<kernel_selector::ctc_greedy_decoder_optional_params>(arg.get_program());
+        auto ctc_gd_optional_params = get_default_optional_params<kernel_selector::ctc_greedy_decoder_optional_params>(arg);
         auto prim = arg.get_primitive();
 
         ctc_gd_params.inputs.push_back(

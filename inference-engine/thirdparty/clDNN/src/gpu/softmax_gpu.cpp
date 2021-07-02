@@ -24,7 +24,7 @@ struct softmax_gpu : typed_primitive_gpu_impl<softmax> {
     static primitive_impl* create(const softmax_node& arg) {
         auto sm_params = get_default_params<kernel_selector::softmax_params>(arg);
         auto sm_optional_params =
-            get_default_optional_params<kernel_selector::softmax_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::softmax_optional_params>(arg);
 
         auto& input = sm_params.inputs[0];
         auto& output = sm_params.output;

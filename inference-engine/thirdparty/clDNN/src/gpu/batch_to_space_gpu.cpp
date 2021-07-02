@@ -28,7 +28,7 @@ public:
     static primitive_impl* create(const batch_to_space_node& arg) {
         auto batch_to_space_params = get_default_params<kernel_selector::batch_to_space_params>(arg);
         auto batch_to_space_optional_params =
-            get_default_optional_params<kernel_selector::batch_to_space_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::batch_to_space_optional_params>(arg);
 
         auto primitive = arg.get_primitive();
 

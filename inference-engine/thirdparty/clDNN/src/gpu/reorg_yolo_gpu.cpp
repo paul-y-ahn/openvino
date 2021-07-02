@@ -24,7 +24,7 @@ struct reorg_yolo_gpu : typed_primitive_gpu_impl<reorg_yolo> {
     static primitive_impl* create(const reorg_yolo_node& arg) {
         auto ry_params = get_default_params<kernel_selector::reorg_yolo_params>(arg);
         auto ry_optional_params =
-            get_default_optional_params<kernel_selector::reorg_yolo_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::reorg_yolo_optional_params>(arg);
 
         const auto& primitive = arg.get_primitive();
 

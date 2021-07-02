@@ -54,7 +54,7 @@ public:
 
         // finially get best kernel
         auto lstm_dynamic_optional_params =
-            get_default_weights_bias_optional_params<kernel_selector::lstm_dynamic_input_optional_params>(arg.get_program());
+            get_default_weights_bias_optional_params<kernel_selector::lstm_dynamic_input_optional_params>(arg);
 
         auto& kernel_selector = kernel_selector::lstm_dynamic_input_kernel_selector::Instance();
         auto best_kernels = kernel_selector.GetBestKernels(dlstm_input_params, lstm_dynamic_optional_params);

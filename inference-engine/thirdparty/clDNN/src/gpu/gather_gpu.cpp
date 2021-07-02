@@ -45,7 +45,7 @@ public:
     static primitive_impl* create(const gather_node& arg) {
         auto gather_params = get_default_params<kernel_selector::gather_params>(arg);
         auto gather_optional_params =
-            get_default_optional_params<kernel_selector::gather_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::gather_optional_params>(arg);
 
         gather_params.axis = convert_axis(arg.get_primitive()->axis);
         gather_params.batch_dim = size_t(arg.get_primitive()->batch_dim);

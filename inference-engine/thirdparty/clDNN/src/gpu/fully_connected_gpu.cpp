@@ -44,8 +44,7 @@ public:
     static primitive_impl* create(const fully_connected_node& arg) {
         auto fc_params = get_weights_bias_default_params<kernel_selector::fully_connected_params>(arg);
         auto fc_optional_params =
-            get_default_weights_bias_optional_params<kernel_selector::fully_connected_optional_params>(
-                arg.get_program());
+            get_default_weights_bias_optional_params<kernel_selector::fully_connected_optional_params>(arg);
         fc_optional_params.allowInputReordering = true;
 
         const auto primitive = arg.get_primitive();

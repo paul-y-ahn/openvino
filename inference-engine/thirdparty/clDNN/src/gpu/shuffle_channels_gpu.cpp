@@ -27,7 +27,7 @@ public:
     static primitive_impl* create(const shuffle_channels_node& arg) {
         auto shuffle_channels_params = get_default_params<kernel_selector::shuffle_channels_params>(arg);
         auto shuffle_channels_optional_params =
-            get_default_optional_params<kernel_selector::shuffle_channels_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::shuffle_channels_optional_params>(arg);
 
         const int32_t number_of_dims = 4;
         int32_t axis = arg.get_primitive()->axis;
