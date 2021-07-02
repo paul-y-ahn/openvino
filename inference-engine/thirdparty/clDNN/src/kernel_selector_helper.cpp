@@ -734,7 +734,6 @@ void set_params(const program_node& node, kernel_selector::params& params) {
     const auto& program = node.get_program();
     const auto& device_info = program.get_engine().get_device_info();
 
-    params.uniqueID = std::to_string(program.get_id()) + "_"  + node.get_unique_id();
     params.engineInfo.bSubGroupSupport = device_info.supports_subgroups;
     params.engineInfo.bSubGroupShortSupport = device_info.supports_subgroups_short;
     params.engineInfo.bSubGroupCharSupport = device_info.supports_subgroups_char;
@@ -764,7 +763,10 @@ void set_params(const program_node& node, kernel_selector::params& params) {
     }
 }
 
-void set_optional_params(const program_impl& program, kernel_selector::optional_params& params) {
+void set_optional_params(const program_node& node, kernel_selector::optional_params& params) {
+    const auto& program = node.get_program();
+
+    params.uniqueID = std::to_string(program.get_id()) + "_"  + node.get_unique_id();
     params.meaningfulKernelsNames = false;
     params.allowStaticInputReordering = program.get_options().get<build_option_type::optimize_data>()->enabled() ||
                                         program.get_options().get<build_option_type::allow_static_input_reorder>()->enabled();

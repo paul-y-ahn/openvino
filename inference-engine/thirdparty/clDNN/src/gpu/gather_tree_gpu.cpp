@@ -24,7 +24,7 @@ struct gather_tree_gpu : typed_primitive_gpu_impl<gather_tree> {
 
     static primitive_impl* create(const gather_tree_node& arg) {
         auto b_params = get_default_params<kernel_selector::gather_tree_params>(arg, 1);
-        auto b_optional_params = get_default_optional_params<kernel_selector::gather_tree_optional_params>(arg.get_program());
+        auto b_optional_params = get_default_optional_params<kernel_selector::gather_tree_optional_params>(arg);
 
         for (size_t i = 1; i < arg.get_dependencies().size(); i++) {
             b_params.inputs.push_back(convert_data_tensor(arg.get_dependency(i).get_output_layout(), 1));

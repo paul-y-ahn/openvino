@@ -53,7 +53,7 @@ public:
             (groups > 1 && !depthwise_separable_opt) ? groups : actual_split,
             groups);
         auto conv_optional_params =
-            get_default_weights_bias_optional_params<kernel_selector::convolution_optional_params>(arg.get_program());
+            get_default_weights_bias_optional_params<kernel_selector::convolution_optional_params>(arg);
 
         conv_params.depthwise_separable_opt = depthwise_separable_opt;
         conv_params.split = split;
@@ -104,7 +104,7 @@ public:
 
         auto conv_params = get_default_params<kernel_selector::convolution_params>(arg, groups);
         auto conv_optional_params =
-            get_default_optional_params<kernel_selector::convolution_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::convolution_optional_params>(arg);
 
         // It's not really needed, just initialize fields of params
         auto weights_layout = layout(input_layout.data_type, input_layout.format, kernel_size);

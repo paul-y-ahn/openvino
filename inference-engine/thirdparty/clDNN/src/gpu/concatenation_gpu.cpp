@@ -67,7 +67,7 @@ public:
 
         auto concat_params = get_default_params<kernel_selector::concatenation_params>(arg);
         auto concat_optional_params =
-            get_default_optional_params<kernel_selector::concatenation_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::concatenation_optional_params>(arg);
         auto axis = arg.get_primitive()->axis;
 
         concat_params.inputs.resize(arg.inputs_count());

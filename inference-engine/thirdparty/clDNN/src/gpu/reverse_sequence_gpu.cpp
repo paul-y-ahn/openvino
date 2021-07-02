@@ -26,7 +26,7 @@ public:
     static primitive_impl* create(const reverse_sequence_node& arg) {
         auto reverse_sequence_params = get_default_params<kernel_selector::reverse_sequence_params>(arg);
         auto reverse_sequence_optional_params =
-            get_default_optional_params<kernel_selector::reverse_sequence_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::reverse_sequence_optional_params>(arg);
 
         reverse_sequence_params.seq_axis = arg.get_primitive()->seq_axis;
         reverse_sequence_params.batch_axis = arg.get_primitive()->batch_axis;

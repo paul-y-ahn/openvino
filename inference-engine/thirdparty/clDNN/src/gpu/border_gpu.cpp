@@ -25,7 +25,7 @@ struct border_gpu : typed_primitive_gpu_impl<border> {
     static primitive_impl* create(const border_node& arg) {
         auto b_params = get_default_params<kernel_selector::border_params>(arg, 1);
         auto b_optional_params =
-            get_default_optional_params<kernel_selector::border_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::border_optional_params>(arg);
 
         auto desc = arg.get_primitive();
 

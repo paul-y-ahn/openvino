@@ -28,7 +28,7 @@ struct strided_slice_gpu : typed_primitive_gpu_impl<strided_slice> {
 public:
     static primitive_impl* create(const strided_slice_node& arg) {
         auto params = get_default_params<kernel_selector::strided_slice_params>(arg);
-        auto op_params = get_default_optional_params<kernel_selector::strided_slice_optional_params>(arg.get_program());
+        auto op_params = get_default_optional_params<kernel_selector::strided_slice_optional_params>(arg);
         const size_t dims_num = params.inputs[0].Dimentions();
 
         // Getting data from constant inputs. There are 3 args: Begin, End, Stride

@@ -39,7 +39,7 @@ public:
     static primitive_impl* create(const scale_node& arg) {
         auto ew_params = get_default_params<kernel_selector::eltwise_params>(arg);
         auto ew_optional_params =
-            get_default_optional_params<kernel_selector::eltwise_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::eltwise_optional_params>(arg);
 
         ew_params.inputs.push_back(convert_data_tensor(arg.scale_in().get_output_layout()));
 

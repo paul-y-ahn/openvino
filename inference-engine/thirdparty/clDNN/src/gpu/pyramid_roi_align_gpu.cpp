@@ -28,7 +28,7 @@ struct pyramid_roi_align_gpu : typed_primitive_gpu_impl<pyramid_roi_align> {
         auto prim = arg.get_primitive();
         auto params = get_default_params<kernel_selector::PyramidROIAlign_params>(arg, 1);
         auto optional_params =
-            get_default_optional_params<kernel_selector::PyramidROIAlign_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::PyramidROIAlign_optional_params>(arg);
 
         params.inputs.push_back(convert_data_tensor(arg.P2().get_output_layout()));
         params.inputs.push_back(convert_data_tensor(arg.P3().get_output_layout()));

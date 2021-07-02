@@ -27,7 +27,7 @@ public:
     static primitive_impl* create(const scatter_nd_update_node& arg) {
         auto scatter_nd_update_params = get_default_params<kernel_selector::scatter_nd_update_params>(arg);
         auto scatter_nd_update_optional_params =
-            get_default_optional_params<kernel_selector::scatter_nd_update_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::scatter_nd_update_optional_params>(arg);
 
         scatter_nd_update_params.indices_rank = arg.get_primitive()->indices_rank;
 

@@ -25,7 +25,7 @@ struct broadcast_gpu : typed_primitive_gpu_impl<broadcast> {
     static primitive_impl* create(const broadcast_node& arg) {
         auto bc_params = get_default_params<kernel_selector::broadcast_params>(arg, 1);
         auto bc_optional_params =
-            get_default_optional_params<kernel_selector::broadcast_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::broadcast_optional_params>(arg);
 
         const auto format = arg.get_output_layout().format;
         size_t max_axes_num;

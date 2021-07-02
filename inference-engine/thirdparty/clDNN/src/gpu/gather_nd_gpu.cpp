@@ -25,7 +25,7 @@ struct gather_nd_gpu : typed_primitive_gpu_impl<gather_nd> {
     static primitive_impl* create(const gather_nd_node& arg) {
         auto gather_nd_params = get_default_params<kernel_selector::gather_nd_params>(arg);
         auto gather_nd_optional_params =
-            get_default_optional_params<kernel_selector::gather_nd_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::gather_nd_optional_params>(arg);
 
         gather_nd_params.indices_rank = arg.get_primitive()->indices_rank;
         gather_nd_params.batch_dims = arg.get_primitive()->batch_dims;

@@ -27,7 +27,7 @@ public:
     static primitive_impl* create(const embedding_bag_node& arg) {
         auto embedding_bag_params = get_default_params<kernel_selector::embedding_bag_params>(arg);
         auto embedding_bag_optional_params =
-            get_default_optional_params<kernel_selector::embedding_bag_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::embedding_bag_optional_params>(arg);
 
         switch (arg.get_primitive()->type) {
         case embedding_bag::packed_sum:

@@ -77,7 +77,7 @@ public:
         auto conv_params = get_weight_bias_zero_point_default_params<kernel_selector::convolution_params>(
             arg, split, 1, primitive->grouped_weights_shape);
         auto conv_optional_params =
-            get_default_weights_bias_optional_params<kernel_selector::convolution_optional_params>(arg.get_program());
+            get_default_weights_bias_optional_params<kernel_selector::convolution_optional_params>(arg);
 
         const auto additional_offset = tensor::max(input_offset, (tensor) 0);
         if (additional_offset != (tensor) 0) {

@@ -47,7 +47,7 @@ public:
 
         auto reorder_params = get_default_params<kernel_selector::reorder_params>(arg);
         auto reorder_optional_params =
-            get_default_optional_params<kernel_selector::reorder_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::reorder_optional_params>(arg);
 
         for (size_t i = 1; i < arg.inputs_count(); i++) {
             reorder_params.inputs.push_back(convert_data_tensor(arg.input(i).get_output_layout()));

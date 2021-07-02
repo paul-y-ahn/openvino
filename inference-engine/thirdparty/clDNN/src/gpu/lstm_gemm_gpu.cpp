@@ -72,7 +72,7 @@ public:
         }
 
         auto lstm_gemm_optional_params =
-            get_default_optional_params<kernel_selector::lstm_gemm_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::lstm_gemm_optional_params>(arg);
 
         auto& kernel_selector = kernel_selector::lstm_gemm_kernel_selector::Instance();
         auto best_kernels = kernel_selector.GetBestKernels(lstm_gemm_params, lstm_gemm_optional_params);

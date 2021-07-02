@@ -75,7 +75,7 @@ public:
 
         // finially get best kernel
         auto dlstm_timeloop_optional_params =
-            get_default_optional_params<kernel_selector::lstm_dynamic_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::lstm_dynamic_optional_params>(arg);
 
         auto& kernel_selector = kernel_selector::lstm_dynamic_timeloop_kernel_selector::Instance();
         auto best_kernels = kernel_selector.GetBestKernels(dlstm_timeloop_params, dlstm_timeloop_optional_params);

@@ -28,7 +28,7 @@ struct grn_gpu : typed_primitive_gpu_impl<grn> {
 public:
     static primitive_impl* create(const grn_node& arg) {
         auto grn_params = get_default_params<kernel_selector::grn_params>(arg);
-        auto grn_optional_params = get_default_optional_params<kernel_selector::grn_optional_params>(arg.get_program());
+        auto grn_optional_params = get_default_optional_params<kernel_selector::grn_optional_params>(arg);
 
         grn_params.bias = arg.get_primitive()->bias;
 

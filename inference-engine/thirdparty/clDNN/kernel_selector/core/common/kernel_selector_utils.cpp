@@ -119,9 +119,9 @@ bool UpdateWeightsParams(weight_bias_params& newParams,
             r_params.output = newParams.weights.TransformIgnorePadding(reqLayout, dtype, groups, false);
             r_params.rotate_180 = rotate;
             r_params.engineInfo = newParams.engineInfo;
-            r_params.uniqueID = options.uniqueID + "_weight";
 
             reorder_optional_params op;
+            op.uniqueID = options.uniqueID + "_weight";
             KernelsData kernels_data = reorderKS.GetBestKernels(r_params, op);
 
             if (kernels_data.empty()) {

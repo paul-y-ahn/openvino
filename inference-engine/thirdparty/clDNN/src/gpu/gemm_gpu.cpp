@@ -26,7 +26,7 @@ public:
     static primitive_impl* create(const gemm_node& arg) {
         auto gemm_params = get_default_params<kernel_selector::gemm_params>(arg, 1);
         auto gemm_optional_params =
-            get_default_optional_params<kernel_selector::gemm_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::gemm_optional_params>(arg);
 
         for (size_t i = 1; i < arg.inputs_count(); i++) {
             gemm_params.inputs.push_back(convert_data_tensor(arg.input(i).get_output_layout()));

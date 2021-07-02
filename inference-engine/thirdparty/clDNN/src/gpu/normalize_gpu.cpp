@@ -36,7 +36,7 @@ public:
     static primitive_impl* create(const normalize_node& arg) {
         auto norm_params = get_default_params<kernel_selector::normalize_params>(arg);
         auto norm_optional_params =
-            get_default_optional_params<kernel_selector::normalize_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::normalize_optional_params>(arg);
 
         const auto& scale_layout = arg.scale().get_output_layout();
 

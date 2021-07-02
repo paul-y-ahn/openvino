@@ -107,7 +107,7 @@ struct resample_gpu : typed_primitive_gpu_impl<resample> {
     static primitive_impl* create(const resample_node& arg) {
         auto us_params = get_default_params<kernel_selector::resample_params>(arg);
         auto us_optional_params =
-            get_default_optional_params<kernel_selector::resample_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::resample_optional_params>(arg);
 
         const auto& primitive = arg.get_primitive();
         size_t dimsNum = arg.get_output_layout().format.dimension();

@@ -26,7 +26,7 @@ public:
     static primitive_impl* create(const extract_image_patches_node& arg) {
         auto params = get_default_params<kernel_selector::extract_image_patches_params>(arg);
         auto optional_params =
-            get_default_optional_params<kernel_selector::extract_image_patches_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::extract_image_patches_optional_params>(arg);
 
         params.sizes = arg.get_primitive()->sizes;
         params.strides = arg.get_primitive()->strides;

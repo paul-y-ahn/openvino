@@ -27,7 +27,7 @@ public:
     static primitive_impl* create(const depth_to_space_node& arg) {
         auto depth_to_space_params = get_default_params<kernel_selector::depth_to_space_params>(arg);
         auto depth_to_space_optional_params =
-            get_default_optional_params<kernel_selector::depth_to_space_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::depth_to_space_optional_params>(arg);
 
         depth_to_space_params.block_size = arg.get_primitive()->block_size;
         depth_to_space_params.mode = arg.get_primitive()->mode == depth_to_space_mode::blocks_first ? kernel_selector::depth_to_space_mode::BLOCKS_FIRST

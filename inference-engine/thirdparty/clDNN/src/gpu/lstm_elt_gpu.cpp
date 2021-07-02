@@ -38,7 +38,7 @@ public:
     static primitive_impl* create(const lstm_elt_node& arg) {
         auto lstm_elt_params = get_default_params<kernel_selector::lstm_elt_params>(arg);
         auto lstm_elt_optional_params =
-            get_default_optional_params<kernel_selector::lstm_elt_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::lstm_elt_optional_params>(arg);
 
         if (arg.cell_term()) {
             const auto& cell_layout = arg.cell().get_output_layout();

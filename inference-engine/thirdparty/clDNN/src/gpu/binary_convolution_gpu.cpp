@@ -80,8 +80,7 @@ public:
         auto conv_params =
             get_weights_bias_default_params<kernel_selector::binary_convolution_params>(arg, actual_split);
         auto conv_optional_params =
-            get_default_weights_bias_optional_params<kernel_selector::binary_convolution_optional_params>(
-                arg.get_program());
+            get_default_weights_bias_optional_params<kernel_selector::binary_convolution_optional_params>(arg);
 
         const auto additional_offset = tensor::max(input_offset, (tensor) 0);
         if (additional_offset != (tensor) 0) {

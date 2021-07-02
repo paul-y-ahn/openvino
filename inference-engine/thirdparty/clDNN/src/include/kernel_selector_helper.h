@@ -232,16 +232,16 @@ params_t get_weight_bias_zero_point_default_params(const arg_t& arg, uint32_t sp
     return params;
 }
 
-void set_optional_params(const program_impl& program, kernel_selector::optional_params& params);
+void set_optional_params(const program_node& node, kernel_selector::optional_params& params);
 
 template <typename optional_params_t>
-inline optional_params_t get_default_optional_params(const program_impl& program) {
+inline optional_params_t get_default_optional_params(const program_node& node) {
     optional_params_t params;
-    set_optional_params(program, params);
+    set_optional_params(node, params);
     return params;
 }
 
 template <typename optional_params_t>
-inline optional_params_t get_default_weights_bias_optional_params(const program_impl& program) {
-    return get_default_optional_params<optional_params_t>(program);
+inline optional_params_t get_default_weights_bias_optional_params(const program_node& node) {
+    return get_default_optional_params<optional_params_t>(node);
 }

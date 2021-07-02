@@ -48,7 +48,7 @@ public:
     static primitive_impl* create(const cum_sum_node& arg) {
         auto cum_sum_params = get_default_params<kernel_selector::cum_sum_params>(arg);
         auto cum_sum_optional_params =
-            get_default_optional_params<kernel_selector::cum_sum_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::cum_sum_optional_params>(arg);
 
         cum_sum_params.axis = convert_axis(arg.get_primitive()->axis);
         cum_sum_params.exclusive = arg.get_primitive()->exclusive;

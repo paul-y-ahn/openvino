@@ -35,7 +35,7 @@ struct activation_gpu : typed_primitive_gpu_impl<activation> {
     static primitive_impl* create(const activation_node& arg) {
         auto activation_params = get_default_params<kernel_selector::activation_params>(arg);
         auto activation_optional_params =
-            get_default_optional_params<kernel_selector::activation_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::activation_optional_params>(arg);
 
         convert_new_activation_func(arg.get_primitive(), activation_params.activations);
 

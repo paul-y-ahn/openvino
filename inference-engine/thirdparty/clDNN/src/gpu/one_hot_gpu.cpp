@@ -26,7 +26,7 @@ struct one_hot_gpu : typed_primitive_gpu_impl<one_hot> {
     static primitive_impl* create(const one_hot_node& arg) {
         auto oh_params = get_default_params<kernel_selector::one_hot_params>(arg, 1);
         auto oh_optional_params =
-            get_default_optional_params<kernel_selector::one_hot_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::one_hot_optional_params>(arg);
 
         oh_params.one_hot_axis = arg.get_primitive()->one_hot_axis;
         oh_params.on_value = arg.get_primitive()->on_value;

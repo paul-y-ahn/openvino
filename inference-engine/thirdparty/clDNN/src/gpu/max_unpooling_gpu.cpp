@@ -43,7 +43,7 @@ public:
     static primitive_impl* create(const max_unpooling_node& arg) {
         auto max_unpooling_params = get_default_params<kernel_selector::max_unpooling_params>(arg);
         auto max_unpooling_optional_params =
-            get_default_optional_params<kernel_selector::max_unpooling_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::max_unpooling_optional_params>(arg);
 
         max_unpooling_params.inputs.push_back(convert_data_tensor(arg.argmax().get_output_layout()));
 

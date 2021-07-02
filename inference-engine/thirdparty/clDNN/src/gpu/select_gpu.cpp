@@ -25,7 +25,7 @@ public:
     static primitive_impl* create(const select_node& arg) {
         auto select_params = get_default_params<kernel_selector::select_params>(arg);
         auto select_optional_params =
-            get_default_optional_params<kernel_selector::select_optional_params>(arg.get_program());
+            get_default_optional_params<kernel_selector::select_optional_params>(arg);
 
         for (size_t i = 1; i < arg.inputs_count(); i++) {
             select_params.inputs.push_back(convert_data_tensor(arg.input(i).get_output_layout()));
