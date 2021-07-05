@@ -74,7 +74,6 @@ struct loop_gpu : typed_primitive_impl<loop> {
             execution_condition_mem = body_network->get_primitive(condition_id)->output_memory_ptr();
         }
 
-
         const auto& concatenated_input_mem_mappings = instance.concatenated_input_mem_mappings;
         const auto& concatenated_output_mem_mappings = instance.concatenated_output_mem_mappings;
 

@@ -286,27 +286,15 @@ public:
     }
 
     void build_body_program() const {
-        const std::vector<cldnn::program_node *>& deps = get_dependencies();
-        // setup internal inputs
-        const primitive_id& trip_count_id = get_trip_count_id();
-        const primitive_id& initial_execution = get_initial_execution_id();
-        const primitive_id& num_iteration = get_num_iteration_id();
-        for (const cldnn::program_node * dep : deps) {
-            const primitive_id& id = dep->id();
-            if (id == trip_count_id || id == initial_execution || id == num_iteration) {
-                continue;
-            }
+        for (const auto& pm : input_primitive_maps) {
+            layout calculated_layout = calc_body_input_layout(pm);
+            const primitive_id& internal_input_id = pm.internal_id;
 
-            for (const auto& pm : input_primitive_maps) {
-                layout calculated_layout = calc_body_input_layout(pm);
-                const primitive_id& internal_input_id = pm.internal_id;
-
-                // add inputs for body network if not exist
-                if (body.get_primitives().count(internal_input_id) == 0) {
-                    body.add(std::make_shared<input_layout>(internal_input_id, calculated_layout));
-                } else {
-                    body.change_input_layout(internal_input_id, calculated_layout);
-                }
+            // add inputs for body network if not exist
+            if (body.get_primitives().count(internal_input_id) == 0) {
+                body.add(std::make_shared<input_layout>(internal_input_id, calculated_layout));
+            } else {
+                body.change_input_layout(internal_input_id, calculated_layout);
             }
         }
 
