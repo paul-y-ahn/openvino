@@ -36,8 +36,8 @@ static DATA_TYPE CreateScalarData(Program &p, const cldnn::primitive_id& id, int
 }
 
 static cldnn::mutable_data CreateAdditionalOutputData(Program &p, const std::shared_ptr<ngraph::Node>& op,
-                                            const cldnn::primitive_id& id, const cldnn::primitive_id& input,
-                                            const int32_t output_idx) {
+                                                        const cldnn::primitive_id& id, const cldnn::primitive_id& input,
+                                                        const int32_t output_idx) {
     const auto precision = DataTypeFromPrecision(op->get_output_element_type(output_idx));
     const auto format = DefaultFormatForDims(op->get_output_shape(output_idx).size());
     const auto tensor = CldnnTensorFromIEDims(op->get_output_shape(output_idx));
@@ -48,7 +48,7 @@ static cldnn::mutable_data CreateAdditionalOutputData(Program &p, const std::sha
 }
 
 static void UpdateBackedge(std::vector<cldnn::loop::backedge_mapping>& back_edges,
-        const cldnn::primitive_id& old_primitive_id, const cldnn::primitive_id& new_primitive_id) {
+                            const cldnn::primitive_id& old_primitive_id, const cldnn::primitive_id& new_primitive_id) {
     for (auto& back_edge : back_edges) {
         if (back_edge.from == old_primitive_id) {
             back_edge.from = new_primitive_id;
