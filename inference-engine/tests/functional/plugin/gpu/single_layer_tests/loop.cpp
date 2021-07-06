@@ -35,7 +35,12 @@ namespace {
                             /* start_value */ testing::Values<int64_t>(0),
                             /* data_shape */ testing::Values<InferenceEngine::SizeVector>({2, 1, 4}),
                             /* data_prc */ testing::Values<InferenceEngine::Precision>(Precision::FP32, Precision::I32),
-                            /* device */ testing::Values<std::string>(CommonTestUtils::DEVICE_GPU)));
+                            /* device */ testing::Values<std::string>(CommonTestUtils::DEVICE_GPU),
+                                        testing::ValuesIn(std::vector<std::map<std::string, std::string>> {
+                                            {{GPUConfigParams::KEY_GPU_ENABLE_LOOP_UNROLLING, PluginConfigParams::YES}},
+                                            {{GPUConfigParams::KEY_GPU_ENABLE_LOOP_UNROLLING, PluginConfigParams::NO}}
+                                        }))); // configuration
+                            // /* configuration */ testing::Values<std::map<std::string, std::string>>({{InferenceEngine::GPUConfigParams::KEY_GPU_ENABLE_LOOP_UNROLLING, InferenceEngine::PluginConfigParams::NO}})));
 //     INSTANTIATE_TEST_CASE_P(smoke_TrivialLoop, TrivialLoopTestGPU,
 //                             testing::Combine(
 //                                     testing::Values<InferenceEngine::Precision>(Precision::FP32, Precision::I32),
