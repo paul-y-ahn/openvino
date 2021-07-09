@@ -560,7 +560,9 @@ int main(int argc, char* argv[]) {
         next_step(ss.str());
 
         // warming up - out of scope
+
         auto inferRequest = inferRequestsQueue.getIdleRequest();
+#if 0
         if (!inferRequest) {
             IE_THROW() << "No idle Infer Requests!";
         }
@@ -575,6 +577,7 @@ int main(int argc, char* argv[]) {
         if (statistics)
             statistics->addParameters(StatisticsReport::Category::EXECUTION_RESULTS, {{"first inference time (ms)", duration_ms}});
         inferRequestsQueue.resetTimes();
+#endif
 
         auto startTime = Time::now();
         auto execTime = std::chrono::duration_cast<ns>(Time::now() - startTime).count();
@@ -583,7 +586,8 @@ int main(int argc, char* argv[]) {
         /** to align number if iterations to guarantee that last infer requests are
          * executed in the same conditions **/
         ProgressBar progressBar(progressBarTotalCount, FLAGS_stream_output, FLAGS_progress);
-
+        niter = 0LL;
+        duration_nanoseconds = 0LL;
         while ((niter != 0LL && iteration < niter) || (duration_nanoseconds != 0LL && (uint64_t)execTime < duration_nanoseconds) ||
                (FLAGS_api == "async" && iteration % nireq != 0)) {
             inferRequest = inferRequestsQueue.getIdleRequest();
@@ -622,12 +626,17 @@ int main(int argc, char* argv[]) {
         }
 
         // wait the latest inference executions
+#if 0
         inferRequestsQueue.waitAll();
 
         double latency = getMedianValue<double>(inferRequestsQueue.getLatencies());
         double totalDuration = inferRequestsQueue.getDurationInMilliseconds();
         double fps = (FLAGS_api == "sync") ? batchSize * 1000.0 / latency : batchSize * 1000.0 * iteration / totalDuration;
-
+#else
+        double latency = 0;
+        double totalDuration = 0;
+        double fps = 0;
+#endif
         if (statistics) {
             statistics->addParameters(StatisticsReport::Category::EXECUTION_RESULTS, {
                                                                                          {"total execution time (ms)", double_to_string(totalDuration)},
