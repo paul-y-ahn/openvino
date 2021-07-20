@@ -26,12 +26,14 @@ namespace {
         //  GCC4.8 limitation: have to specify type of each element in list
         //                               static_trip_count |  max | dynamic_exit | axis
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  10, -1, 0 },  // n_iter 10, no dynamic exit
+#if 1
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5,  3,  0 },  // n_iter 3, dynamic exit on 3
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5,  7,  0 },  // n_iter 5, dynamic exit not reached
         std::tuple<bool, int64_t, int64_t, int64_t>{  true , -1,  5,  0 },  // n_iter 5, inf loop with dynamic exit on 5
         std::tuple<bool, int64_t, int64_t, int64_t>{ false ,  5,  3,  0 },  // | same with dynamic trip count
         std::tuple<bool, int64_t, int64_t, int64_t>{ false ,  5,  7,  0 },  // |
         std::tuple<bool, int64_t, int64_t, int64_t>{ false , -1,  5,  0 }   // |
+#endif
     };
 
     std::vector<InferenceEngine::SizeVector> inputs_0 = {
@@ -54,12 +56,14 @@ namespace {
         //  GCC4.8 limitation: have to specify type of each element in list
         //                               static_trip_count |  max | dynamic_exit | axis
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5, -1,  1 },  // n_iter 5, no dynamic exit
+#if 1
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5,  3,  1 },  // n_iter 3, dynamic exit on 3
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5,  7,  1 },  // n_iter 5, dynamic exit not reached
         std::tuple<bool, int64_t, int64_t, int64_t>{  true , -1,  5,  1 },  // n_iter 5, inf loop with dynamic exit on 5
         std::tuple<bool, int64_t, int64_t, int64_t>{ false ,  5,  3,  1 },  // | same with dynamic trip count
         std::tuple<bool, int64_t, int64_t, int64_t>{ false ,  5,  7,  1 },  // |
         std::tuple<bool, int64_t, int64_t, int64_t>{ false , -1,  5,  1 }   // |
+#endif
     };
 
     std::vector<InferenceEngine::SizeVector> inputs_1 = {
@@ -82,12 +86,14 @@ namespace {
         //  GCC4.8 limitation: have to specify type of each element in list
         //                               static_trip_count |  max | dynamic_exit | axis
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  10, -1,  2 },  // n_iter 10, no dynamic exit
+#if 1
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5,  3,  2 },  // n_iter 3, dynamic exit on 3
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5,  7,  2 },  // n_iter 5, dynamic exit not reached
         std::tuple<bool, int64_t, int64_t, int64_t>{  true , -1,  5,  2 },  // n_iter 5, inf loop with dynamic exit on 5
         std::tuple<bool, int64_t, int64_t, int64_t>{ false ,  5,  3,  2 },  // | same with dynamic trip count
         std::tuple<bool, int64_t, int64_t, int64_t>{ false ,  5,  7,  2 },  // |
         std::tuple<bool, int64_t, int64_t, int64_t>{ false , -1,  5,  2 }   // |
+#endif
     };
 
     std::vector<InferenceEngine::SizeVector> inputs_2 = {
@@ -111,12 +117,14 @@ namespace {
         //  GCC4.8 limitation: have to specify type of each element in list
         //                               static_trip_count |  max | dynamic_exit | axis
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  10, -1, -1 },  // n_iter 5, no dynamic exit
+#if 1
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5,  3,  -1 },  // n_iter 3, dynamic exit on 3
         std::tuple<bool, int64_t, int64_t, int64_t>{  true ,  5,  7,  -1 },  // n_iter 5, dynamic exit not reached
         std::tuple<bool, int64_t, int64_t, int64_t>{  true , -1,  5,  -1 },  // n_iter 5, inf loop with dynamic exit on 5
         std::tuple<bool, int64_t, int64_t, int64_t>{ false ,  5,  3,  -1 },  // | same with dynamic trip count
         std::tuple<bool, int64_t, int64_t, int64_t>{ false ,  5,  7,  -1 },  // |
         std::tuple<bool, int64_t, int64_t, int64_t>{ false , -1,  5,  -1 }   // |
+#endif
     };
 
     std::vector<InferenceEngine::SizeVector> inputs_no_auto_concat = {

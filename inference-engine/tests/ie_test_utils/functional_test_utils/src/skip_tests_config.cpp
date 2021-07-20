@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <regex>
 
 #include "common_test_utils/file_utils.hpp"
 #include "functional_test_utils/skip_tests_config.hpp"
@@ -17,11 +18,19 @@ bool currentTestIsDisabled() {
     bool skip_test = false;
     const auto fullName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()
                           + std::string(".") + ::testing::UnitTest::GetInstance()->current_test_info()->name();
+
     for (const auto &pattern : disabledTestPatterns()) {
-        std::regex re(pattern);
-        if (std::regex_match(fullName, re))
-            skip_test = true;
+        try {
+            std::regex re(pattern);
+            if (std::regex_match(fullName, re))
+                skip_test = true;
+        } catch (std::regex_error& ex) {
+            std::string err_msg = "fail to match regex (" + pattern + ") for " + std::string(ex.what()) + " ex code " + std::to_string(ex.code());
+            std::cout << err_msg << std::endl;
+            throw std::runtime_error(err_msg);
+        }
     }
+
     return skip_test && !disable_tests_skipping;
 }
 
